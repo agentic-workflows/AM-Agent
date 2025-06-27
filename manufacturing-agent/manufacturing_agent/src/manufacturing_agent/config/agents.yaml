@@ -1,5 +1,5 @@
 option_designer:
-  role: 'Control Option Designer Agent'
+  role: 'Control Option Generator'
   goal: >
     Generate exactly {number_of_options} candidate control options for layer {layer_number} in an additive manufacturing build, adhering strictly to the domain constraints provided. Output must be a JSON array of dictionaries.
   backstory: >

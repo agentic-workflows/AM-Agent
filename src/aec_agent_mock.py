@@ -15,13 +15,12 @@ import pathlib
 from flowcept.configs import AGENT
 from flowcept.flowceptor.adapters.agents.agents_utils import convert_mcp_to_langchain, build_llm_model, tuples_to_langchain_messages
 from flowcept.flowceptor.adapters.agents.flowcept_llm_prov_capture import invoke_llm, add_preamble_to_response
-from examples.agents.aec_prompts import choose_option_prompt, generate_options_set_prompt
-from examples.agents.aec_agent_context_manager import AdamantineAeCContextManager
 from langchain_openai import ChatOpenAI 
+from aec_agent_context_manager import AdamantineAeCContextManager
 
 # Add manufacturing_agent to path to allow bridge import
 MANUFACTURING_AGENT_SRC_PATH = (
-    pathlib.Path(__file__).resolve().parents[3]
+    pathlib.Path(__file__).resolve().parents[1]
     / "manufacturing-agent"
     / "manufacturing_agent"
     / "src"
@@ -40,8 +39,8 @@ else:
 
 from manufacturing_agent.crew import OptionGenerationCrew, DecisionCrew
 
-os.environ["SAMBASTUDIO_URL"] = AGENT.get("llm_server_url")
-os.environ["SAMBASTUDIO_API_KEY"] = AGENT.get("api_key")
+# os.environ["SAMBASTUDIO_URL"] = AGENT.get("llm_server_url")
+# os.environ["SAMBASTUDIO_API_KEY"] = AGENT.get("api_key")
 
 
 agent_controller = AdamantineAeCContextManager()
@@ -59,6 +58,8 @@ mcp = FastMCP("AnC_Agent_mock", require_session=True, lifespan=agent_controller.
 def generate_options_set(layer: int, planned_controls, number_of_options=4, campaign_id=None):
     model_name = AGENT.get("openai_model", "gpt-4o")
     llm = ChatOpenAI(model=model_name)
+    ctx = mcp.get_context()
+    history = ctx.request_context.lifespan_context.history
     crew = OptionGenerationCrew(llm=llm)
     result = crew.generate(layer_number=layer, planned_controls=planned_controls, number_of_options=number_of_options, campaign_id=campaign_id)
     return result
@@ -69,22 +70,13 @@ def generate_options_set(layer: int, planned_controls, number_of_options=4, camp
 def choose_option(scores: Dict, planned_controls: List[Dict], campaign_id: str=None):
     model_name = AGENT.get("openai_model", "gpt-4o")
     llm = ChatOpenAI(model=model_name)
+    ctx = mcp.get_context()
+    history = ctx.request_context.lifespan_context.history
     crew = DecisionCrew(llm=llm)
     decision = crew.decide(layer_number=scores.get("layer", 0), planned_controls=planned_controls, scores=scores, campaign_id=campaign_id)
 
     human_option = int(np.argmin(scores["scores"])) if "scores" in scores else None
     attention_flag = human_option is not None and decision["best_option"] != human_option
-
-    print({
-        "option": decision["best_option"],
-        "explanation": decision["reasoning"],
-        "label": "CrewAI",
-        "human_option": human_option,
-        "attention": attention_flag,
-        "response": decision["raw_text"],
-        "prompt": decision["prompt_msgs"],
-        "llm": llm,
-    })
 
     return {
         "option": decision["best_option"],
@@ -93,7 +85,6 @@ def choose_option(scores: Dict, planned_controls: List[Dict], campaign_id: str=N
         "human_option": human_option,
         "attention": attention_flag,
         "response": decision["raw_text"],
-        "prompt": decision["prompt_msgs"],
         "llm": llm,
     }
 

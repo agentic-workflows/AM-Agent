@@ -1,6 +1,6 @@
 generation_task:
   description: >
-    ROLE: Control Option Designer
+    ROLE: Control Option Generator
     TASK: Generate exactly {number_of_options} distinct control options for layer {layer_number}.
     DOMAIN CONSTRAINTS: Each option is a JSON object with keys 'power', 'dwell_0', 'dwell_1'. 'power' is a float in [0, 350]; dwell values are integers 10‒120 and divisible by 5.
     CONTEXT: The baseline planned control for each layer is given in {planned_controls}. Use it as guidance but you may explore nearby values.

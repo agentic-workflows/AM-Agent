@@ -14,10 +14,7 @@ class OptionGenerationCrew:
     def __init__(self, llm: LLM | None = None):
         self.llm = llm
 
-    # --------------------------------------------------
-    # Agents & Tasks
-    # --------------------------------------------------
-    @agent
+    @agentdecide
     def option_designer(self) -> Agent:
         return Agent(
             config=self.agents_config['option_designer'],
@@ -32,9 +29,6 @@ class OptionGenerationCrew:
             agent=self.option_designer(),
         )
 
-    # --------------------------------------------------
-    # Crew
-    # --------------------------------------------------
     @crew
     def crew(self) -> Crew:
         return Crew(
@@ -44,9 +38,7 @@ class OptionGenerationCrew:
             verbose=True,
         )
 
-    # --------------------------------------------------
     # Public helper
-    # --------------------------------------------------
     def generate(self, layer_number: int, planned_controls, number_of_options: int, campaign_id: str | None = None) -> Dict[str, Any]:
         """Run the crew once and return the generated control options plus metadata."""
 
@@ -70,7 +62,6 @@ class OptionGenerationCrew:
         return {
             "control_options": control_options,
             "response": raw_text,
-            "prompt": [],  # Placeholder for future prompt capture
             "llm": self.llm,
         }
 
@@ -85,9 +76,6 @@ class DecisionCrew:
     def __init__(self, llm: LLM | None = None):
         self.llm = llm
 
-    # --------------------------------------------------
-    # Agents & Tasks
-    # --------------------------------------------------
     @agent
     def decision_maker(self) -> Agent:
         return Agent(
@@ -103,9 +91,6 @@ class DecisionCrew:
             agent=self.decision_maker(),
         )
 
-    # --------------------------------------------------
-    # Crew
-    # --------------------------------------------------
     @crew
     def crew(self) -> Crew:
         return Crew(
@@ -114,10 +99,8 @@ class DecisionCrew:
             process=Process.sequential,
             verbose=True,
         )
-
-    # --------------------------------------------------
+    
     # Public helper
-    # --------------------------------------------------
     def decide(self, layer_number: int, planned_controls, scores, campaign_id: str | None = None) -> Dict[str, Any]:
         """Run the crew once and return the chosen option index & reasoning."""
 
@@ -137,7 +120,8 @@ class DecisionCrew:
             data = _json.loads(raw_text)
             best_option = int(data["best_option"])
             reasoning = data.get("reasoning", "")
-            # Post-validation: ensure the index is within the valid range
+            # Post-validation: ensure the index is within the valid range 
+            # Potentially need to rerun?
             n_opts = len(scores.get("scores", []))
             if n_opts and (best_option < 0 or best_option >= n_opts):
                 best_option = int(min(range(n_opts), key=scores["scores"].__getitem__))
@@ -150,13 +134,10 @@ class DecisionCrew:
             "best_option": best_option,
             "reasoning": reasoning,
             "raw_text": raw_text,
-            "prompt_msgs": [],  # Placeholder for future prompt capture
         }
 
 
-# ------------------------------------------------------------------
-# Simple session caches (per campaign)
-# ------------------------------------------------------------------
+# Simple session caches (per campaign) to avoid re-initializing the crew for each request
 _DECISION_CACHE: dict[str, DecisionCrew] = {}
 _GEN_CACHE: dict[str, OptionGenerationCrew] = {}
 
