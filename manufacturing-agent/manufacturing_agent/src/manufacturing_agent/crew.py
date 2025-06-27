@@ -138,19 +138,19 @@ class DecisionCrew:
 
 
 # Simple session caches (per campaign) to avoid re-initializing the crew for each request
-# _DECISION_CACHE: dict[str, DecisionCrew] = {}
-# _GEN_CACHE: dict[str, OptionGenerationCrew] = {}
+_DECISION_CACHE: dict[str, DecisionCrew] = {}
+_GEN_CACHE: dict[str, OptionGenerationCrew] = {}
 
 
-# def get_decision_crew(campaign_id: str | None, llm: LLM | None):
-#     key = campaign_id or "default"
-#     if key not in _DECISION_CACHE:
-#         _DECISION_CACHE[key] = DecisionCrew(llm=llm)
-#     return _DECISION_CACHE[key]
+def get_decision_crew(campaign_id: str | None, llm: LLM | None):
+    key = campaign_id or "default"
+    if key not in _DECISION_CACHE:
+        _DECISION_CACHE[key] = DecisionCrew(llm=llm)
+    return _DECISION_CACHE[key]
 
 
-# def get_generation_crew(campaign_id: str | None, llm: LLM | None):
-#     key = campaign_id or "default"
-#     if key not in _GEN_CACHE:
-#         _GEN_CACHE[key] = OptionGenerationCrew(llm=llm)
-#     return _GEN_CACHE[key] 
+def get_generation_crew(campaign_id: str | None, llm: LLM | None):
+    key = campaign_id or "default"
+    if key not in _GEN_CACHE:
+        _GEN_CACHE[key] = OptionGenerationCrew(llm=llm)
+    return _GEN_CACHE[key] 
