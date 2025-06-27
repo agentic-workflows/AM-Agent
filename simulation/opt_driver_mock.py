@@ -178,7 +178,9 @@ def main():
         first_layer_ix=config["first_layer_ix"]
     )
     driver.start(threaded=False)
+    print("--------------------------------")
     fc.stop()
+    print("TESTING COMPLETE")
 
 
 if __name__ == "__main__":

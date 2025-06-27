@@ -14,7 +14,7 @@ class OptionGenerationCrew:
     def __init__(self, llm: LLM | None = None):
         self.llm = llm
 
-    @agentdecide
+    @agent
     def option_designer(self) -> Agent:
         return Agent(
             config=self.agents_config['option_designer'],
