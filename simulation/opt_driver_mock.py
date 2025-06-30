@@ -7,6 +7,7 @@ from flowcept.flowcept_api.flowcept_controller import Flowcept
 from flowcept.agents.agent_client import run_tool
 from flowcept.flowceptor.consumers.base_consumer import BaseConsumer
 from flowcept.instrumentation.flowcept_task import flowcept_task
+from flowcept.instrumentation.task_capture import FlowceptTask
 
 try:
     print(run_tool("check_liveness"))
@@ -17,16 +18,6 @@ except Exception as e:
 
 class AdamantineDriver(BaseConsumer):
 
-    @flowcept_task(subtype="call_agent_task")
-    @staticmethod
-    def generate_options_set(layer, planned_controls, number_of_options):
-        return
-
-    @flowcept_task(subtype="call_agent_task")
-    @staticmethod
-    def choose_option(scores: Dict, planned_controls: List[Dict]):
-        return
-
     def __init__(self, number_of_options, max_layers, planned_controls: List[Dict], first_layer_ix: int = 2):
         super().__init__()
         self._layers_count = first_layer_ix
@@ -35,11 +26,15 @@ class AdamantineDriver(BaseConsumer):
         self._planned_controls = planned_controls
         self._current_controls_options = None
 
-        AdamantineDriver.generate_options_set(
-            layer=self._layers_count,
-            planned_controls=self._planned_controls,
-            number_of_options=self._number_of_options
-        )
+        FlowceptTask(
+            subtype="call_agent_task",
+            activity_id="generate_options_set",
+            used=dict(
+                layer=self._layers_count,
+                planned_controls=self._planned_controls,
+                number_of_options=self._number_of_options
+            )
+        ).send()
 
     def message_handler(self, msg_obj: Dict) -> bool:
         """
@@ -91,13 +86,22 @@ class AdamantineDriver(BaseConsumer):
                         "control_options": self._current_controls_options,
                         "scores": l2_error,
                     }
-                    AdamantineDriver.choose_option(
-                        scores=scores,
-                        planned_controls=self._planned_controls,
-                    )
+                    FlowceptTask(
+                        subtype="call_agent_task",
+                        activity_id="choose_option",
+                        used=dict(
+                            scores=scores,
+                            planned_controls=self._planned_controls,
+                        )
+                    ).send()
 
                 elif tool_name == "choose_option":
                     tool_output = msg_obj.get("generated")
+                    if tool_output is None:
+                        self.logger.error(f"An unexpected error happened!: Tool output is None. Msg was: {msg_obj}")
+                        if msg_obj.get("stderr", None):
+                            self.logger.error(f"This was the error from the agent tool: {msg_obj.get("stderr")}")
+                        return False
                     option = tool_output.get("option")
                     explanation = tool_output.get("explanation")
                     label = tool_output.get("label", None)
@@ -110,11 +114,15 @@ class AdamantineDriver(BaseConsumer):
                         print("All layers have been processed!")
                         return False
 
-                    AdamantineDriver.generate_options_set(
-                        layer=self._layers_count,
-                        planned_controls=self._planned_controls,
-                        number_of_options=self._number_of_options
-                    )
+                    FlowceptTask(
+                        subtype="call_agent_task",
+                        activity_id="generate_options_set",
+                        used=dict(
+                            layer=self._layers_count,
+                            planned_controls=self._planned_controls,
+                            number_of_options=self._number_of_options
+                        )
+                    ).send()
         elif msg_type == 'workflow':
             print("Got workflow msg")
         else:
@@ -178,9 +186,7 @@ def main():
         first_layer_ix=config["first_layer_ix"]
     )
     driver.start(threaded=False)
-    print("--------------------------------")
     fc.stop()
-    print("TESTING COMPLETE")
 
 
 if __name__ == "__main__":
