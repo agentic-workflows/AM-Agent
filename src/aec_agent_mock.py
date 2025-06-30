@@ -19,29 +19,16 @@ from flowcept.configs import AGENT
 from langchain_openai import ChatOpenAI
 from aec_agent_context_manager import AdamantineAeCContextManager
 
-# TODO Please avoid adding paths like this below.
-# TODO: This makes much harder for cross-compatability in other developers' IDEs and envs
-
-# Add manufacturing_agent to path to allow bridge import
-MANUFACTURING_AGENT_SRC_PATH = (
-    pathlib.Path(__file__).resolve().parents[1]
-    / "manufacturing-agent"
-    / "manufacturing_agent"
-    / "src"
-)
-sys.path.append(str(MANUFACTURING_AGENT_SRC_PATH))
-
-# Load the .env file from the manufacturing_agent directory
-from dotenv import load_dotenv
-dotenv_path = MANUFACTURING_AGENT_SRC_PATH / "manufacturing_agent" / ".env"
-if dotenv_path.is_file():
-    load_dotenv(dotenv_path=dotenv_path)
-    print(f"Loaded environment variables from {dotenv_path}")
-else:
-    print(f"Could not find .env file at {dotenv_path}")
-
-
-from manufacturing_agent.crew import OptionGenerationCrew, DecisionCrew
+try:
+    from manufacturing_agent.crew import OptionGenerationCrew, DecisionCrew
+    from pathlib import Path
+    from dotenv import load_dotenv
+    import importlib
+except ImportError as exc:
+    raise ImportError(
+        "The 'manufacturing_agent' package is not installed.\n"
+        "Run 'pip install -e manufacturing-agent/manufacturing_agent' inside your virtual environment."
+    ) from exc
 
 # os.environ["SAMBASTUDIO_URL"] = AGENT.get("llm_server_url")
 # os.environ["SAMBASTUDIO_API_KEY"] = AGENT.get("api_key")
@@ -136,4 +123,13 @@ def main():
 
 
 if __name__ == "__main__":
+    _pkg_root = pathlib.Path(__file__).resolve().parent
+    _dotenv_path = _pkg_root / ".env"
+    if _dotenv_path.is_file():
+        load_dotenv(dotenv_path=_dotenv_path)
+        print(f"Loaded environment variables from {_dotenv_path}")
+
+    pkg_root = Path(importlib.import_module("manufacturing_agent").__file__).resolve().parent
+    load_dotenv(pkg_root / ".env")          # loads the key from manufacturing_agent/.env
+
     main()
