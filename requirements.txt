@@ -1,0 +1,3 @@
+flowcept[llm_agent]
+crewai
+langchain_openai

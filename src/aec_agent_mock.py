@@ -3,20 +3,24 @@ import os
 import sys
 from typing import Dict, List
 
+from flowcept.instrumentation.flowcept_agent_task import FlowceptLLM, agent_flowcept_task
+from flowcept.configs import AGENT_HOST, AGENT_PORT
+from utils import build_llm
+
 # Add the project root to Python path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 import numpy as np
 import uvicorn
-from flowcept.instrumentation.agent_flowcept_task import agent_flowcept_task
+
 from mcp.server.fastmcp import FastMCP
-from mcp.server.fastmcp.prompts import base
 import pathlib
 from flowcept.configs import AGENT
-from flowcept.flowceptor.adapters.agents.agents_utils import convert_mcp_to_langchain, build_llm_model, tuples_to_langchain_messages
-from flowcept.flowceptor.adapters.agents.flowcept_llm_prov_capture import invoke_llm, add_preamble_to_response
-from langchain_openai import ChatOpenAI 
+from langchain_openai import ChatOpenAI
 from aec_agent_context_manager import AdamantineAeCContextManager
+
+# TODO Please avoid adding paths like this below.
+# TODO: This makes much harder for cross-compatability in other developers' IDEs and envs
 
 # Add manufacturing_agent to path to allow bridge import
 MANUFACTURING_AGENT_SRC_PATH = (
@@ -57,7 +61,8 @@ mcp = FastMCP("AnC_Agent_mock", require_session=True, lifespan=agent_controller.
 @agent_flowcept_task  # Must be in this order. @mcp.tool then @flowcept_task
 def generate_options_set(layer: int, planned_controls, number_of_options=4, campaign_id=None):
     model_name = AGENT.get("openai_model", "gpt-4o")
-    llm = ChatOpenAI(model=model_name)
+    llm = FlowceptLLM(ChatOpenAI(model=model_name))
+    #llm = build_llm()
     ctx = mcp.get_context()
     history = ctx.request_context.lifespan_context.history
     crew = OptionGenerationCrew(llm=llm)
@@ -69,7 +74,8 @@ def generate_options_set(layer: int, planned_controls, number_of_options=4, camp
 @agent_flowcept_task  # Must be in this order. @mcp.tool then @flowcept_task
 def choose_option(scores: Dict, planned_controls: List[Dict], campaign_id: str=None):
     model_name = AGENT.get("openai_model", "gpt-4o")
-    llm = ChatOpenAI(model=model_name)
+    llm = FlowceptLLM(ChatOpenAI(model=model_name))
+    #llm = build_llm()
     ctx = mcp.get_context()
     history = ctx.request_context.lifespan_context.history
     crew = DecisionCrew(llm=llm)
@@ -84,8 +90,6 @@ def choose_option(scores: Dict, planned_controls: List[Dict], campaign_id: str=N
         "label": "CrewAI",
         "human_option": human_option,
         "attention": attention_flag,
-        "response": decision["raw_text"],
-        "llm": llm,
     }
 
 @mcp.tool()
@@ -116,13 +120,9 @@ def check_llm() -> str:
     """
     Check if the agent can talk to the LLM service.
     """
-
-    messages = [base.UserMessage(f"Hi, are you working properly?")]
-
-    langchain_messages = convert_mcp_to_langchain(messages)
-    response = invoke_llm(langchain_messages)
-    result = add_preamble_to_response(response, mcp)
-
+    llm = ChatOpenAI(model="gpt-4o")
+    llm = FlowceptLLM(llm)
+    result = llm.invoke("hi!")
     return result
 
 
@@ -131,7 +131,7 @@ def main():
     Start the MCP server.
     """
     uvicorn.run(
-        mcp.streamable_http_app, host=AGENT.get("mcp_host", "0.0.0.0"), port=AGENT.get("mcp_port", 8000), lifespan="on"
+        mcp.streamable_http_app, host=AGENT_HOST, port=AGENT_PORT, lifespan="on"
     )
 
 
