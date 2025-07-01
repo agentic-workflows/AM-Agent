@@ -66,8 +66,6 @@ class OptionGenerationCrew:
 
         return {
             "control_options": control_options,
-            "response": raw_text,
-            "llm": self.llm,
         }
 
 
