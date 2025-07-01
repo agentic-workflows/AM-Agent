@@ -4,7 +4,8 @@ generation_task:
     TASK: Generate exactly {number_of_options} distinct control options for layer {layer_number}.
     DOMAIN CONSTRAINTS: Each option is a JSON object with keys 'power', 'dwell_0', 'dwell_1'. 'power' is a float in [0, 350]; dwell values are integers 10‒120 and divisible by 5.
     CONTEXT: The baseline planned control for each layer is given in {planned_controls}. Use it as guidance but you may explore nearby values.
-    FORMAT CONSTRAINTS: Return ONLY a JSON array with exactly {number_of_options} elements. No commentary, no code blocks.
+    FORMAT CONSTRAINTS: Return ONLY a valid JSON array (no Markdown, no code fences) with EXACTLY {number_of_options} elements. The array must be directly parseable by Python's `json.loads()`. Each element MUST be an object that contains *only* the keys "power", "dwell_0", "dwell_1" in that order; no extra keys. Do not include trailing commas, comments, or text before/after the JSON.
+    VALIDATION TIP: Before finalising, re-read your output and ask: "Would `json.loads()` succeed on this exact string?" If not, fix it.
   expected_output: >
     A JSON array of control option objects.
 
@@ -13,7 +14,11 @@ decision_task:
     ROLE: Control Decision Agent
     TASK: Choose the best option index for layer {layer_number} using the provided simulation `scores` object.
     INPUT STRUCTURE: `scores` dict has keys 'layer', 'control_options', and 'scores'. Typically (but not always) lower score is better.
-    FORMAT CONSTRAINTS: Output ONLY a JSON object with keys "best_option" (an integer 0‒N-1 where N=len(control_options)) and "reasoning" (string).
+    FORMAT CONSTRAINTS: Return ONLY a valid JSON object (no Markdown, no code fences) with exactly two keys:
+      • "best_option": integer (0‒N-1 where N = len(control_options))
+      • "reasoning":  string
+    The object must contain **no additional keys** and be directly parseable by `json.loads()`. Do not prepend or append any explanatory text.
+    CONSISTENCY CHECK: Ensure the chosen index is within range; if scores list length is N, best_option ∈ [0, N-1].
     ANTI-HALLUCINATION TIP: Double-check numeric comparisons; never claim a larger number is lower.
   expected_output: >
     A JSON string with the keys `best_option` and `reasoning`. 

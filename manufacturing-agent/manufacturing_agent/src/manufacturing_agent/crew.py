@@ -57,7 +57,12 @@ class OptionGenerationCrew:
         try:
             control_options = _json.loads(raw_text)
         except Exception:
-            control_options = []
+            from manufacturing_agent.crew import JsonFixerCrew  # local import to avoid circular refs
+            try:
+                fixed = JsonFixerCrew(llm=self.llm).fix(raw_message=raw_text)
+                control_options = _json.loads(fixed)
+            except Exception:
+                control_options = []
 
         return {
             "control_options": control_options,
@@ -126,9 +131,16 @@ class DecisionCrew:
             if n_opts and (best_option < 0 or best_option >= n_opts):
                 best_option = int(min(range(n_opts), key=scores["scores"].__getitem__))
                 reasoning += " (adjusted to valid lowest-score option)"
-        except Exception as exc:
-            best_option = int(min(range(len(scores["scores"])), key=scores["scores"].__getitem__))
-            reasoning = f"Fallback due to parse error: {exc}"
+        except Exception:
+            from manufacturing_agent.crew import JsonFixerCrew
+            try:
+                fixed = JsonFixerCrew(llm=self.llm).fix(raw_message=raw_text)
+                data = _json.loads(fixed)
+                best_option = int(data["best_option"])
+                reasoning = data.get("reasoning", "")
+            except Exception as exc:
+                best_option = int(min(range(len(scores["scores"])), key=scores["scores"].__getitem__))
+                reasoning = f"Fallback due to parse error: {exc}"
 
         return {
             "best_option": best_option,
@@ -153,4 +165,54 @@ def get_generation_crew(campaign_id: str | None, llm: LLM | None):
     key = campaign_id or "default"
     if key not in _GEN_CACHE:
         _GEN_CACHE[key] = OptionGenerationCrew(llm=llm)
-    return _GEN_CACHE[key] 
+    return _GEN_CACHE[key]
+
+
+
+# JSON Fixer Crew: validates and repairs JSON strings returned by other LLMs
+
+@CrewBase
+class JsonFixerCrew:
+    """Crew that extracts and fixes JSON from a raw LLM message."""
+
+    agents_config = 'config/agents.yaml'
+    tasks_config = 'config/tasks.yaml'
+
+    def __init__(self, llm: LLM | None = None):
+        self.llm = llm
+
+    @agent
+    def json_fixer(self) -> Agent:
+        return Agent(
+            config=self.agents_config.get('json_fixer', {
+                'role': 'JSON Extractor',
+                'goal': 'Return valid JSON',
+                'backstory': ''
+            }),
+            verbose=False,
+            llm=self.llm,
+        )
+
+    @task
+    def fixer_task(self) -> Task:
+        prompt_template = (
+            "You are a JSON extractor and fixer.\n"
+            "You are given a raw message that may include explanations, markdown fences, or partial JSON.\n"
+            "Your task:\n"
+            "  1. Check if the message contains a JSON object or array.\n"
+            "  2. If it does, extract and fix the JSON if needed.\n"
+            "  3. Ensure all keys and string values are properly quoted.\n"
+            "  4. Return only valid, parseable JSON — no markdown, no explanations.\n\n"
+            "THE OUTPUT MUST BE A VALID JSON ONLY. DO NOT SAY ANYTHING ELSE.\n\n"
+            "Raw message:\n"
+            "{raw_message}\n"
+        )
+        return Task(
+            description=prompt_template,
+            agent=self.json_fixer(),
+        )
+
+    def fix(self, raw_message: str) -> str:
+        """Return a fixed JSON string."""
+        output = self.crew().kickoff(inputs={"raw_message": raw_message})
+        return str(output.raw) if hasattr(output, "raw") else str(output)

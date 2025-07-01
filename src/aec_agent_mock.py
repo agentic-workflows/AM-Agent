@@ -130,6 +130,6 @@ if __name__ == "__main__":
         print(f"Loaded environment variables from {_dotenv_path}")
 
     pkg_root = Path(importlib.import_module("manufacturing_agent").__file__).resolve().parent
-    load_dotenv(pkg_root / ".env")          # loads the key from manufacturing_agent/.env
+    load_dotenv(pkg_root / ".env") 
 
     main()
