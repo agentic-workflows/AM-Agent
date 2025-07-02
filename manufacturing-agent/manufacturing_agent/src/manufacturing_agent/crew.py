@@ -104,14 +104,14 @@ class DecisionCrew:
         )
     
     # Public helper
-    def decide(self, layer_number: int, planned_controls, scores, campaign_id: str | None = None) -> Dict[str, Any]:
+    def decide(self, layer_number: int, control_options, planned_controls, scores) -> Dict[str, Any]:
         """Run the crew once and return the chosen option index & reasoning."""
 
         inputs = {
             "layer_number": layer_number,
+            "control_options": control_options,
             "planned_controls": planned_controls,
             "scores": scores,
-            "campaign_id": campaign_id,
         }
 
         output = self.crew().kickoff(inputs=inputs)
@@ -125,9 +125,9 @@ class DecisionCrew:
             reasoning = data.get("reasoning", "")
             # Post-validation: ensure the index is within the valid range 
             # Potentially need to rerun?
-            n_opts = len(scores.get("scores", []))
+            n_opts = len(scores)
             if n_opts and (best_option < 0 or best_option >= n_opts):
-                best_option = int(min(range(n_opts), key=scores["scores"].__getitem__))
+                best_option = int(min(range(n_opts), key=scores.__getitem__))
                 reasoning += " (adjusted to valid lowest-score option)"
         except Exception:
             from manufacturing_agent.crew import JsonFixerCrew

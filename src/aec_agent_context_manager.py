@@ -30,7 +30,7 @@ class AdamantineAeCContextManager(BaseAgentContextManager):
             subtype = msg_obj.get("subtype", '')
             if subtype == 'call_agent_task':
                 print(msg_obj)
-                tool_name = msg_obj["activity_id"]
+                tool_name = msg_obj["custom_metadata"]["tool_name"]
                 campaign_id = msg_obj.get("campaign_id", None)
                 tool_args = msg_obj.get("used", {})
                 tool_args["campaign_id"] = campaign_id

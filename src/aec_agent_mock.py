@@ -59,14 +59,17 @@ def generate_options_set(layer: int, planned_controls, number_of_options=4, camp
 
 @mcp.tool()
 @agent_flowcept_task  # Must be in this order. @mcp.tool then @flowcept_task
-def choose_option(scores: Dict, planned_controls: List[Dict], campaign_id: str=None):
+def choose_option(layer: int, control_options: List[Dict], scores: List, planned_controls: List[Dict], campaign_id: str=None):
     model_name = AGENT.get("openai_model", "gpt-4o")
     llm = FlowceptLLM(ChatOpenAI(model=model_name))
     #llm = build_llm()
     ctx = mcp.get_context()
     history = ctx.request_context.lifespan_context.history
     crew = DecisionCrew(llm=llm)
-    decision = crew.decide(layer_number=scores.get("layer", 0), planned_controls=planned_controls, scores=scores, campaign_id=campaign_id)
+    decision = crew.decide(layer_number=layer,
+                           control_options=control_options,
+                           planned_controls=planned_controls,
+                           scores=scores)
 
     human_option = int(np.argmin(scores["scores"])) if "scores" in scores else None
     attention_flag = human_option is not None and decision["best_option"] != human_option

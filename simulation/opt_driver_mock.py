@@ -28,7 +28,8 @@ class AdamantineDriver(BaseConsumer):
 
         FlowceptTask(
             subtype="call_agent_task",
-            activity_id="generate_options_set",
+            activity_id="call_generate_options_set",
+            custom_metadata={"tool_name": "generate_options_set"},
             used=dict(
                 layer=self._layers_count,
                 planned_controls=self._planned_controls,
@@ -81,18 +82,17 @@ class AdamantineDriver(BaseConsumer):
                     tool_output = msg_obj.get("generated")
                     self._current_controls_options = tool_output.get("control_options")
                     l2_error = simulate_layer(layer_number=self._layers_count, control_options=self._current_controls_options)
-                    scores = {
+                    used = {
                         "layer": self._layers_count,
                         "control_options": self._current_controls_options,
-                        "scores": l2_error,
+                        "scores": l2_error.get("scores"),
+                        "planned_controls": self._planned_controls
                     }
                     FlowceptTask(
                         subtype="call_agent_task",
-                        activity_id="choose_option",
-                        used=dict(
-                            scores=scores,
-                            planned_controls=self._planned_controls,
-                        )
+                        activity_id="call_choose_option",
+                        custom_metadata={"tool_name": "choose_option"},
+                        used=used
                     ).send()
 
                 elif tool_name == "choose_option":
@@ -116,7 +116,8 @@ class AdamantineDriver(BaseConsumer):
 
                     FlowceptTask(
                         subtype="call_agent_task",
-                        activity_id="generate_options_set",
+                        activity_id="call_generate_options_set",
+                        custom_metadata={"tool_name": "generate_options_set"},
                         used=dict(
                             layer=self._layers_count,
                             planned_controls=self._planned_controls,
@@ -166,7 +167,7 @@ def simulate_layer(layer_number: int, control_options: List[Dict]):
         l2_error.append(forward_simulation(control_option))
 
     print(f"These are the scores calculated by this simulation for these options: {l2_error}")
-    return l2_error
+    return {"scores": l2_error}
 
 
 def main():
