@@ -210,6 +210,16 @@ class JsonFixerCrew:
             agent=self.json_fixer(),
         )
 
+    @crew
+    def crew(self) -> Crew:
+        """Define the execution crew for the JSON fixer."""
+        return Crew(
+            agents=self.agents,
+            tasks=self.tasks,
+            process=Process.sequential,
+            verbose=False,
+        )
+
     def fix(self, raw_message: str) -> str:
         """Return a fixed JSON string."""
         output = self.crew().kickoff(inputs={"raw_message": raw_message})
