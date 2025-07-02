@@ -40,8 +40,8 @@ mcp = FastMCP("AnC_Agent", require_session=True, lifespan=agent_controller.lifes
 
 
 def build_llm():
-    model_name = AGENT.get("openai_model", "gpt-4o")
-    llm = ChatOpenAI(model=model_name)
+    model_name = AGENT.get("openai_model", "o4-mini-2025-04-16")
+    llm = ChatOpenAI(model=model_name, temperature=1)
     tool_task = get_current_context_task()
     wrapped_llm = FlowceptLLM(llm=llm, campaign_id=tool_task.campaign_id, parent_task_id=tool_task.task_id, workflow_id=tool_task.workflow_id, agent_id=tool_task.agent_id)
     return wrapped_llm
@@ -113,7 +113,7 @@ def check_llm() -> str:
     """
     Check if the agent can talk to the LLM service.
     """
-    llm = ChatOpenAI(model="gpt-4o")
+    llm = ChatOpenAI(model="o4-mini-2025-04-16", temperature=1)
     llm = FlowceptLLM(llm)
     result = llm.invoke("hi!")
     return result

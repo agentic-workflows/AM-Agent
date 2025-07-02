@@ -40,7 +40,7 @@ class AdamantineAeCContextManager(BaseAgentContextManager):
                     if tool_name == 'choose_option':
                         this_history = dict()
                         tool_result = tool_result[0]
-                        this_history.update(tool_args["scores"])
+                        this_history["scores"] = tool_args["scores"]
                         tool_result = json.loads(tool_result)
                         this_history["chosen_option"] = tool_result["option"]
                         this_history["explanation"] = tool_result["explanation"]
