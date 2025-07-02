@@ -3,7 +3,8 @@ import os
 import sys
 from typing import Dict, List
 
-from flowcept.instrumentation.flowcept_agent_task import FlowceptLLM, agent_flowcept_task
+from flowcept.commons.flowcept_dataclasses.task_object import TaskObject
+from flowcept.instrumentation.flowcept_agent_task import FlowceptLLM, agent_flowcept_task, get_current_context_task
 from flowcept.configs import AGENT_HOST, AGENT_PORT
 from utils import build_llm
 
@@ -35,9 +36,15 @@ except ImportError as exc:
 
 
 agent_controller = AdamantineAeCContextManager()
-mcp = FastMCP("AnC_Agent_mock", require_session=True, lifespan=agent_controller.lifespan)
+mcp = FastMCP("AnC_Agent", require_session=True, lifespan=agent_controller.lifespan)
 
 
+def build_llm():
+    model_name = AGENT.get("openai_model", "gpt-4o")
+    llm = ChatOpenAI(model=model_name)
+    tool_task = get_current_context_task()
+    wrapped_llm = FlowceptLLM(llm=llm, campaign_id=tool_task.campaign_id, parent_task_id=tool_task.task_id, workflow_id=tool_task.workflow_id, agent_id=tool_task.agent_id)
+    return wrapped_llm
 
 #################################################
 # TOOLS
@@ -47,9 +54,7 @@ mcp = FastMCP("AnC_Agent_mock", require_session=True, lifespan=agent_controller.
 @mcp.tool()
 @agent_flowcept_task  # Must be in this order. @mcp.tool then @flowcept_task
 def generate_options_set(layer: int, planned_controls, number_of_options=4, campaign_id=None):
-    model_name = AGENT.get("openai_model", "gpt-4o")
-    llm = FlowceptLLM(ChatOpenAI(model=model_name))
-    #llm = build_llm()
+    llm = build_llm()
     ctx = mcp.get_context()
     history = ctx.request_context.lifespan_context.history
     crew = OptionGenerationCrew(llm=llm)
@@ -60,9 +65,7 @@ def generate_options_set(layer: int, planned_controls, number_of_options=4, camp
 @mcp.tool()
 @agent_flowcept_task  # Must be in this order. @mcp.tool then @flowcept_task
 def choose_option(layer: int, control_options: List[Dict], scores: List, planned_controls: List[Dict], campaign_id: str=None):
-    model_name = AGENT.get("openai_model", "gpt-4o")
-    llm = FlowceptLLM(ChatOpenAI(model=model_name))
-    #llm = build_llm()
+    llm = build_llm()
     ctx = mcp.get_context()
     history = ctx.request_context.lifespan_context.history
     crew = DecisionCrew(llm=llm)
@@ -71,7 +74,7 @@ def choose_option(layer: int, control_options: List[Dict], scores: List, planned
                            planned_controls=planned_controls,
                            scores=scores)
 
-    human_option = int(np.argmin(scores["scores"])) if "scores" in scores else None
+    human_option = int(np.argmin(scores))
     attention_flag = human_option is not None and decision["best_option"] != human_option
 
     return {

@@ -100,7 +100,7 @@ class AdamantineDriver(BaseConsumer):
                     if tool_output is None:
                         self.logger.error(f"An unexpected error happened!: Tool output is None. Msg was: {msg_obj}")
                         if msg_obj.get("stderr", None):
-                            self.logger.error(f"This was the error from the agent tool: {msg_obj.get("stderr")}")
+                            self.logger.error(f"This was the error from the agent tool: {msg_obj.get('stderr')}")
                         return False
                     option = tool_output.get("option")
                     explanation = tool_output.get("explanation")
@@ -127,7 +127,7 @@ class AdamantineDriver(BaseConsumer):
         elif msg_type == 'workflow':
             print("Got workflow msg")
         else:
-            print(f"We got a msg with different type: {msg_obj.get("type", None)}")
+            print(f"We got a msg with different type: {msg_obj.get('type', None)}")
         return True
 
 
