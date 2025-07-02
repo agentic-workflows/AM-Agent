@@ -12,13 +12,14 @@ generation_task:
 decision_task:
   description: >
     ROLE: Control Decision Agent
-    TASK: Choose the best option index for layer {layer_number} using the provided simulation `scores` object.
-    INPUT STRUCTURE: `scores` dict has keys 'layer', 'control_options', and 'scores'. Typically (but not always) lower score is better.
+    TASK: Choose the best option index for layer {layer_number} using the provided simulation scores = {scores} and control_options = {control_options}.
     FORMAT CONSTRAINTS: Return ONLY a valid JSON object (no Markdown, no code fences) with exactly two keys:
       • "best_option": integer (0‒N-1 where N = len(control_options))
       • "reasoning":  string
     The object must contain **no additional keys** and be directly parseable by `json.loads()`. Do not prepend or append any explanatory text.
     CONSISTENCY CHECK: Ensure the chosen index is within range; if scores list length is N, best_option ∈ [0, N-1].
     ANTI-HALLUCINATION TIP: Double-check numeric comparisons; never claim a larger number is lower.
+    Scoring Hint: Typically (but not always), a lower score indicates better quality. For example, in [5, 10], option 0 is preferred since 5 < 10.
+    ⚠️ Caution: Do NOT hallucinate reasoning. For example, if scores = [2, 3, 5], do NOT say 5 is the lowest. Use correct comparisons only.
   expected_output: >
     A JSON string with the keys `best_option` and `reasoning`. 
