@@ -4,38 +4,20 @@ import random
 from typing import Dict, List
 
 from flowcept.flowcept_api.flowcept_controller import Flowcept
-from flowcept.agents.agent_client import run_tool
 from flowcept.flowceptor.consumers.base_consumer import BaseConsumer
 from flowcept.instrumentation.flowcept_task import flowcept_task
 from flowcept.instrumentation.task_capture import FlowceptTask
 
-try:
-    print(run_tool("check_liveness"))
-except Exception as e:
-    print(e)
-    pass
-
 
 class AdamantineDriver(BaseConsumer):
 
-    def __init__(self, number_of_options, max_layers, planned_controls: List[Dict], first_layer_ix: int = 2):
+    def __init__(self, first_layer_ix: int = 2):
         super().__init__()
         self._layers_count = first_layer_ix
-        self._number_of_options = number_of_options
-        self._max_layers = max_layers
-        self._planned_controls = planned_controls
+        self._number_of_options = None
+        self._max_layers = 0
+        self._planned_controls = None
         self._current_controls_options = None
-
-        FlowceptTask(
-            subtype="call_agent_task",
-            activity_id="call_generate_options_set",
-            custom_metadata={"tool_name": "generate_options_set"},
-            used=dict(
-                layer=self._layers_count,
-                planned_controls=self._planned_controls,
-                number_of_options=self._number_of_options
-            )
-        ).send()
 
     def message_handler(self, msg_obj: Dict) -> bool:
         """
@@ -124,6 +106,22 @@ class AdamantineDriver(BaseConsumer):
                             number_of_options=self._number_of_options
                         )
                     ).send()
+            elif subtype == 'data_message':
+                used = msg_obj.get("used")
+                self._planned_controls = used.get("planned_control")
+                self._number_of_options = used.get("number_of_options")
+                self._max_layers = len(self._planned_controls)
+                FlowceptTask(
+                    subtype="call_agent_task",
+                    activity_id="call_generate_options_set",
+                    custom_metadata={"tool_name": "generate_options_set"},
+                    used=dict(
+                        layer=self._layers_count,
+                        planned_controls=self._planned_controls,
+                        number_of_options=self._number_of_options
+                    )
+                ).send()
+
         elif msg_type == 'workflow':
             print("Got workflow msg")
         else:
@@ -157,7 +155,7 @@ def simulate_layer(layer_number: int, control_options: List[Dict]):
     def forward_simulation(_control_option: Dict) -> float:
         """Calculate a score (n2 norm) for a given control_option"""
         assert len(_control_option) == 3
-        sleep(0.1)
+        sleep(5)
         return random.randint(0, 100)
 
     print(f"Simulating for layer {layer_number}")
@@ -171,21 +169,11 @@ def simulate_layer(layer_number: int, control_options: List[Dict]):
 
 
 def main():
-    config = {"max_layers": 4, "number_of_options": 2, "first_layer_ix": 2}
-
-    fc = Flowcept(start_persistence=False, save_workflow=False, check_safe_stops=False, workflow_args=config)
+    fc = Flowcept(start_persistence=False, save_workflow=False, check_safe_stops=False)
     fc.start()
     print("Campaign_id="+Flowcept.campaign_id)
 
-    number_of_options = config["number_of_options"]
-    planned_controls = generate_mock_planned_control(config, number_of_options)
-
-    driver = AdamantineDriver(
-        number_of_options=config["number_of_options"],
-        max_layers=config["max_layers"],
-        planned_controls=planned_controls,
-        first_layer_ix=config["first_layer_ix"]
-    )
+    driver = AdamantineDriver()
     driver.start(threaded=False)
     fc.stop()
 
