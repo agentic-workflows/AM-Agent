@@ -19,7 +19,8 @@ decision_task:
     The object must contain **no additional keys** and be directly parseable by `json.loads()`. Do not prepend or append any explanatory text.
     CONSISTENCY CHECK: Ensure the chosen index is within range; if scores list length is N, best_option ∈ [0, N-1].
     ANTI-HALLUCINATION TIP: Double-check numeric comparisons; never claim a larger number is lower.
-    Scoring Hint: Typically (but not always), a lower score indicates better quality. For example, in [5, 10], option 0 is preferred since 5 < 10.
-    ⚠️ Caution: Do NOT hallucinate reasoning. For example, if scores = [2, 3, 5], do NOT say 5 is the lowest. Use correct comparisons only.
+    Scoring Hint: A lower score indicates better quality. For example, in [5, 10], option 0 is preferred since 5 < 10.
+    ⚠️ Caution: Do NOT hallucinate reasoning. For example, if scores = [2, 3, 5], 2 is the lowest score and should be chosen. Use correct numerical comparisons only.
+    After you have chosen the best option, you should double check the scores to make sure you have chosen the correct lowest score option.
   expected_output: >
     A JSON string with the keys `best_option` and `reasoning`. 
