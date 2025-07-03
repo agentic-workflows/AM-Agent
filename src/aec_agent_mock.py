@@ -1,8 +1,11 @@
 import json
 import os
 import sys
+from threading import Thread
+from time import sleep
 from typing import Dict, List
 
+from flowcept.agents.agent_client import run_tool
 from flowcept.commons.flowcept_dataclasses.task_object import TaskObject
 from flowcept.instrumentation.flowcept_agent_task import FlowceptLLM, agent_flowcept_task, get_current_context_task
 from flowcept.configs import AGENT_HOST, AGENT_PORT
@@ -40,8 +43,9 @@ mcp = FastMCP("AnC_Agent", require_session=True, lifespan=agent_controller.lifes
 
 
 def build_llm():
-    model_name = AGENT.get("openai_model", "o4-mini-2025-04-16")
-    llm = ChatOpenAI(model=model_name, temperature=1)
+    #model_name = AGENT.get("model_name", "o4-mini-2025-04-16")
+    model_name = "gpt-4o"
+    llm = ChatOpenAI(model=model_name)
     tool_task = get_current_context_task()
     wrapped_llm = FlowceptLLM(llm=llm, campaign_id=tool_task.campaign_id, parent_task_id=tool_task.task_id, workflow_id=tool_task.workflow_id, agent_id=tool_task.agent_id)
     return wrapped_llm
@@ -123,9 +127,13 @@ def main():
     """
     Start the MCP server.
     """
-    uvicorn.run(
-        mcp.streamable_http_app, host=AGENT_HOST, port=AGENT_PORT, lifespan="on"
-    )
+    def uvicorn_run():
+        uvicorn.run(
+            mcp.streamable_http_app, host=AGENT_HOST, port=AGENT_PORT, lifespan="on"
+        )
+    Thread(target=uvicorn_run).start()
+    sleep(3)  # Allow some time for uvicorn to start
+    run_tool(check_liveness, host=AGENT_HOST, port=AGENT_PORT)
 
 
 if __name__ == "__main__":
