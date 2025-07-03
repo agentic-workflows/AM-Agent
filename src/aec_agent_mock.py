@@ -6,7 +6,6 @@ from time import sleep
 from typing import Dict, List
 
 from flowcept.agents.agent_client import run_tool
-from flowcept.commons.flowcept_dataclasses.task_object import TaskObject
 from flowcept.instrumentation.flowcept_agent_task import FlowceptLLM, agent_flowcept_task, get_current_context_task
 from flowcept.configs import AGENT_HOST, AGENT_PORT
 from utils import build_llm
@@ -109,7 +108,7 @@ def check_liveness() -> str:
     Check if the agent is running.
     """
 
-    return f"I'm {mcp.name} and I'm ready!"
+    return f"I'm {mcp.name} and I'm very artificially intelligent!"
 
 
 @mcp.tool()
@@ -132,8 +131,8 @@ def main():
             mcp.streamable_http_app, host=AGENT_HOST, port=AGENT_PORT, lifespan="on"
         )
     Thread(target=uvicorn_run).start()
-    sleep(3)  # Allow some time for uvicorn to start
-    run_tool(check_liveness, host=AGENT_HOST, port=AGENT_PORT)
+    sleep(2)  # Allow some time for uvicorn to start
+    print(run_tool(check_liveness, host=AGENT_HOST, port=AGENT_PORT)[0])
 
 
 if __name__ == "__main__":
