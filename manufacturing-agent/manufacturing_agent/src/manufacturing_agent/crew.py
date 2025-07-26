@@ -146,10 +146,90 @@ class DecisionCrew:
             "raw_text": raw_text,
         }
 
+    def decide_with_feedback(self, layer_number: int, control_options, planned_controls, scores, validation_feedback: str = None) -> Dict[str, Any]:
+        """Run the crew with additional feedback from safety validation."""
+        
+        # Create a modified task description that includes the validation feedback
+        base_inputs = {
+            "layer_number": layer_number,
+            "control_options": control_options,
+            "planned_controls": planned_controls,
+            "scores": scores,
+        }
+        
+        if validation_feedback:
+            # Create an enhanced task that includes the previous feedback
+            enhanced_description = f"""
+            ROLE: Control Decision Agent
+            TASK: Choose the best option index for layer {layer_number} using the provided simulation scores = {scores} and control_options = {control_options}.
+            
+            PREVIOUS VALIDATION FEEDBACK: {validation_feedback}
+            IMPORTANT: The previous decision was rejected for the above reasons. Please carefully review the scores and ensure you select the option with the LOWEST score value.
+            
+            FORMAT CONSTRAINTS: Return ONLY a valid JSON object (no Markdown, no code fences) with exactly two keys:
+              • "best_option": integer (0‒N-1 where N = len(control_options))
+              • "reasoning":  string
+            The object must contain **no additional keys** and be directly parseable by `json.loads()`. Do not prepend or append any explanatory text.
+            CONSISTENCY CHECK: Ensure the chosen index is within range; if scores list length is N, best_option ∈ [0, N-1].
+            ANTI-HALLUCINATION TIP: Double-check numeric comparisons; never claim a larger number is lower.
+            Scoring Hint: A lower score indicates better quality. For example, in [5, 10], option 0 is preferred since 5 < 10.
+            ⚠️ Caution: Do NOT hallucinate reasoning. For example, if scores = [2, 3, 5], 2 is the lowest score and should be chosen. Use correct numerical comparisons only.
+            After you have chosen the best option, you should double check the scores to make sure you have chosen the correct lowest score option.
+            """
+            
+            enhanced_task = Task(
+                description=enhanced_description,
+                agent=self.decision_maker(),
+                expected_output="A JSON string with the keys `best_option` and `reasoning`."
+            )
+            
+            crew = Crew(
+                agents=[self.decision_maker()],
+                tasks=[enhanced_task],
+                process=Process.sequential,
+                verbose=True,
+            )
+            
+            output = crew.kickoff(inputs=base_inputs)
+        else:
+            # Use the regular method if no feedback
+            return self.decide(layer_number, control_options, planned_controls, scores)
+        
+        raw_text = str(output.raw) if hasattr(output, "raw") else str(output)
+
+        import json as _json
+
+        try:
+            data = _json.loads(raw_text)
+            best_option = int(data["best_option"])
+            reasoning = data.get("reasoning", "")
+            # Post-validation: ensure the index is within the valid range 
+            n_opts = len(scores)
+            if n_opts and (best_option < 0 or best_option >= n_opts):
+                best_option = int(min(range(n_opts), key=scores.__getitem__))
+                reasoning += " (adjusted to valid lowest-score option)"
+        except Exception:
+            from manufacturing_agent.crew import JsonFixerCrew
+            try:
+                fixed = JsonFixerCrew(llm=self.llm).fix(raw_message=raw_text)
+                data = _json.loads(fixed)
+                best_option = int(data["best_option"])
+                reasoning = data.get("reasoning", "")
+            except Exception as exc:
+                best_option = int(min(range(len(scores)), key=scores.__getitem__))
+                reasoning = f"Fallback due to parse error: {exc}"
+
+        return {
+            "best_option": best_option,
+            "reasoning": reasoning,
+            "raw_text": raw_text,
+        }
+
 
 # Simple session caches (per campaign) to avoid re-initializing the crew for each request
 _DECISION_CACHE: dict[str, DecisionCrew] = {}
 _GEN_CACHE: dict[str, OptionGenerationCrew] = {}
+_SAFETY_CACHE: dict[str, 'SafetyValidationCrew'] = {}
 
 
 def get_decision_crew(campaign_id: str | None, llm: LLM | None):
@@ -165,6 +245,92 @@ def get_generation_crew(campaign_id: str | None, llm: LLM | None):
         _GEN_CACHE[key] = OptionGenerationCrew(llm=llm)
     return _GEN_CACHE[key]
 
+
+def get_safety_crew(campaign_id: str | None, llm: LLM | None):
+    key = campaign_id or "default"
+    if key not in _SAFETY_CACHE:
+        _SAFETY_CACHE[key] = SafetyValidationCrew(llm=llm)
+    return _SAFETY_CACHE[key]
+
+
+@CrewBase
+class SafetyValidationCrew:
+    """Crew that validates decisions made by the decision_maker agent."""
+
+    agents_config = 'config/agents.yaml'
+    tasks_config = 'config/tasks.yaml'
+
+    def __init__(self, llm: LLM | None = None):
+        self.llm = llm
+
+    @agent
+    def safety_validator(self) -> Agent:
+        return Agent(
+            config=self.agents_config['safety_validator'],
+            verbose=True,
+            llm=self.llm,
+        )
+
+    @task
+    def safety_validation_task(self) -> Task:
+        return Task(
+            config=self.tasks_config['safety_validation_task'],
+            agent=self.safety_validator(),
+        )
+
+    @crew
+    def crew(self) -> Crew:
+        return Crew(
+            agents=self.agents,
+            tasks=self.tasks,
+            process=Process.sequential,
+            verbose=True,
+        )
+    
+    # Public helper
+    def validate(self, layer_number: int, decision_result: Dict[str, Any], control_options, scores) -> Dict[str, Any]:
+        """Run the crew once and return validation results."""
+
+        max_option_index = len(control_options) - 1 if control_options else 0
+
+        inputs = {
+            "layer_number": layer_number,
+            "decision_result": decision_result,
+            "control_options": control_options,
+            "scores": scores,
+            "max_option_index": max_option_index,
+        }
+
+        output = self.crew().kickoff(inputs=inputs)
+        raw_text = str(output.raw) if hasattr(output, "raw") else str(output)
+
+        import json as _json
+
+        try:
+            validation_data = _json.loads(raw_text)
+            is_valid = bool(validation_data.get("is_valid", False))
+            feedback = validation_data.get("feedback", "")
+            requires_regeneration = bool(validation_data.get("requires_regeneration", False))
+        except Exception:
+            from manufacturing_agent.crew import JsonFixerCrew
+            try:
+                fixed = JsonFixerCrew(llm=self.llm).fix(raw_message=raw_text)
+                validation_data = _json.loads(fixed)
+                is_valid = bool(validation_data.get("is_valid", False))
+                feedback = validation_data.get("feedback", "")
+                requires_regeneration = bool(validation_data.get("requires_regeneration", False))
+            except Exception as exc:
+                # Fallback validation logic
+                is_valid = False
+                feedback = f"Validation failed due to parse error: {exc}"
+                requires_regeneration = True
+
+        return {
+            "is_valid": is_valid,
+            "feedback": feedback,
+            "requires_regeneration": requires_regeneration,
+            "raw_text": raw_text,
+        }
 
 
 # JSON Fixer Crew: validates and repairs JSON strings returned by other LLMs

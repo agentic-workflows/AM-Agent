@@ -24,7 +24,7 @@ from langchain_openai import AzureChatOpenAI
 from aec_agent_context_manager import AdamantineAeCContextManager
 
 try:
-    from manufacturing_agent.crew import OptionGenerationCrew, DecisionCrew
+    from manufacturing_agent.crew import OptionGenerationCrew, DecisionCrew, SafetyValidationCrew
     from pathlib import Path
     from dotenv import load_dotenv
     import importlib
@@ -45,8 +45,8 @@ mcp = FastMCP("AnC_Agent", require_session=True, lifespan=agent_controller.lifes
 def build_llm():
     #model_name = AGENT.get("model_name", "o4-mini-2025-04-16")
     llm = AzureChatOpenAI(
-        azure_deployment="gpt-o3",  # use the correct deployment name
-        api_version="2025-04-01-preview"  # stable API version
+        azure_deployment="gpt-4o",  # use the correct deployment name 2024-10-21
+        api_version="2024-10-21"  # stable API version
     )
     tool_task = get_current_context_task()
     wrapped_llm = FlowceptLLM(llm=llm, campaign_id=tool_task.campaign_id, parent_task_id=tool_task.task_id, workflow_id=tool_task.workflow_id, agent_id=tool_task.agent_id)
@@ -74,11 +74,65 @@ def choose_option(layer: int, control_options: List[Dict], scores: List, planned
     llm = build_llm()
     ctx = mcp.get_context()
     history = ctx.request_context.lifespan_context.history
-    crew = DecisionCrew(llm=llm)
-    decision = crew.decide(layer_number=layer,
-                           control_options=control_options,
-                           planned_controls=planned_controls,
-                           scores=scores)
+    
+    decision_crew = DecisionCrew(llm=llm)
+    safety_crew = SafetyValidationCrew(llm=llm)
+    
+    max_retries = 2
+    safety_feedback = ""
+    last_decision = None
+    
+    for attempt in range(max_retries + 1):
+        # Make decision - use feedback-enhanced method for retry attempts
+        if attempt == 0:
+            decision = decision_crew.decide(layer_number=layer,
+                                           control_options=control_options,
+                                           planned_controls=planned_controls,
+                                           scores=scores)
+        else:
+            # Use the feedback from previous validation failure
+            decision = decision_crew.decide_with_feedback(layer_number=layer,
+                                                         control_options=control_options,
+                                                         planned_controls=planned_controls,
+                                                         scores=scores,
+                                                         validation_feedback=safety_feedback)
+        
+        # Validate decision with safety crew
+        validation = safety_crew.validate(layer_number=layer,
+                                         decision_result=decision,
+                                         control_options=control_options,
+                                         scores=scores)
+        
+        safety_feedback = validation["feedback"]
+        
+        # If valid, break out of retry loop
+        if validation["is_valid"]:
+            break
+        
+        # Store the last attempt
+        last_decision = decision
+        
+        # If this was the last attempt or regeneration not needed, use mathematical fallback
+        if attempt == max_retries or not validation["requires_regeneration"]:
+            # Mathematical fallback: choose the option with the lowest score
+            correct_option = int(np.argmin(scores))
+            decision = {
+                "best_option": correct_option,
+                "reasoning": f"Safety fallback: Selected option {correct_option} with lowest score {scores[correct_option]} after {attempt + 1} attempts. Previous validation feedback: {safety_feedback}",
+                "raw_text": f'{{"best_option": {correct_option}, "reasoning": "Safety fallback selection"}}'
+            }
+            safety_feedback += f" [Applied mathematical fallback to option {correct_option}]"
+            break
+
+    # Final validation to ensure our decision is correct
+    final_validation = safety_crew.validate(layer_number=layer,
+                                           decision_result=decision,
+                                           control_options=control_options,
+                                           scores=scores)
+    
+    # Update safety feedback with final validation
+    if not final_validation["is_valid"]:
+        safety_feedback += f" [WARNING: Final validation still failed: {final_validation['feedback']}]"
 
     human_option = int(np.argmin(scores))
     attention_flag = human_option is not None and decision["best_option"] != human_option
@@ -89,6 +143,10 @@ def choose_option(layer: int, control_options: List[Dict], scores: List, planned
         "label": "CrewAI",
         "human_option": human_option,
         "attention": attention_flag,
+        "safety_validated": final_validation["is_valid"],
+        "safety_feedback": safety_feedback,
+        "used_fallback": "Safety fallback" in decision["reasoning"],
+        "attempts_made": attempt + 1,
     }
 
 @mcp.tool()
@@ -121,7 +179,7 @@ def check_llm() -> str:
     """
     llm = AzureChatOpenAI(
         azure_deployment="gpt-4o",
-        api_version="2025-04-01-preview"  
+        api_version="2024-10-21"  
     )
     llm = FlowceptLLM(llm)
     result = llm.invoke("hi!")

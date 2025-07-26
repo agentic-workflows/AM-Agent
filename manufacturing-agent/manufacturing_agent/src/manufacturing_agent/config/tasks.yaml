@@ -24,3 +24,26 @@ decision_task:
     After you have chosen the best option, you should double check the scores to make sure you have chosen the correct lowest score option.
   expected_output: >
     A JSON string with the keys `best_option` and `reasoning`. 
+
+safety_validation_task:
+  description: >
+    ROLE: Safety Validation Agent
+    TASK: Validate the decision made by the decision_maker for layer {layer_number}. 
+    INPUT DATA: decision_result = {decision_result}, control_options = {control_options}, scores = {scores}
+    VALIDATION CRITERIA:
+      • Check if "best_option" index is within valid range [0, {max_option_index}]
+      • Verify that reasoning is provided and non-empty
+      • Ensure the chosen option corresponds to a reasonable score (preferably lowest or close to lowest)
+      • Check for logical consistency between reasoning and choice
+      • Validate JSON structure contains required keys
+    SAFETY REQUIREMENTS:
+      • Option index must not exceed available options
+      • Decision should align with score-based optimization (lower scores are better)
+      • Reasoning should not contain contradictory statements
+    FORMAT CONSTRAINTS: Return ONLY a valid JSON object (no Markdown, no code fences) with exactly three keys:
+      • "is_valid": boolean (true if decision passes all validation checks)
+      • "feedback": string (explanation of validation results, issues found, or confirmation)
+      • "requires_regeneration": boolean (true if decision_maker should retry)
+    The object must be directly parseable by `json.loads()`.
+  expected_output: >
+    A JSON object with keys `is_valid`, `feedback`, and `requires_regeneration`. 
