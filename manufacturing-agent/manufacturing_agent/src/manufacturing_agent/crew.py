@@ -2,6 +2,100 @@ from crewai import Agent, Crew, Process, Task
 from crewai.project import CrewBase, agent, crew, task
 from langchain_core.language_models import LLM
 from typing import Any, Dict
+import time
+import hashlib
+import json
+
+# Simple Research Service using OpenAI Deep Research API
+class SimpleResearchService:
+    """Simple service for manufacturing research using OpenAI Deep Research API"""
+    
+    def __init__(self, openai_client):
+        self.client = openai_client
+        self.cache = {}  # Simple parameter-based caching
+        self.cache_duration = 3600  # 1 hour cache
+    
+    def _generate_cache_key(self, layer_number: int, control_options) -> str:
+        """Generate cache key based on layer and parameter types"""
+        # Create simple hash from layer and parameter ranges
+        params_str = f"layer_{layer_number}"
+        if control_options:
+            # Extract parameter ranges for caching
+            powers = [opt.get('power', 0) for opt in control_options]
+            dwell_0s = [opt.get('dwell_0', 0) for opt in control_options]
+            dwell_1s = [opt.get('dwell_1', 0) for opt in control_options]
+            params_str += f"_power_{min(powers)}-{max(powers)}_dwell0_{min(dwell_0s)}-{max(dwell_0s)}_dwell1_{min(dwell_1s)}-{max(dwell_1s)}"
+        
+        return hashlib.md5(params_str.encode()).hexdigest()
+    
+    def _is_cache_valid(self, cache_entry) -> bool:
+        """Check if cache entry is still valid"""
+        return time.time() - cache_entry.get('timestamp', 0) < self.cache_duration
+    
+    def get_research_background(self, layer_number: int, control_options, planned_controls):
+        """Use OpenAI Deep Research API for AM literature background"""
+        
+        # Check cache first
+        cache_key = self._generate_cache_key(layer_number, control_options)
+        if cache_key in self.cache and self._is_cache_valid(self.cache[cache_key]):
+            print(f"Using cached research for layer {layer_number}")
+            return self.cache[cache_key]
+        
+        print(f"Conducting research for layer {layer_number}...")
+        
+        # Create focused research query
+        query = f"""Research optimal control parameters for additive manufacturing layer {layer_number}:
+        
+        Key areas to investigate:
+        - Laser power optimization for powder bed fusion processes
+        - Dwell time effects on layer quality, adhesion, and thermal management
+        - Parameter interactions and trade-offs between power, dwell_0, and dwell_1
+        - Recent advances in AM process control and optimization
+        - Quality control considerations for layer-by-layer building
+        
+        Focus on practical insights that can inform parameter selection decisions for manufacturing engineers.
+        Provide specific recommendations when possible."""
+        
+        try:
+            # Call Deep Research API
+            response = self.client.responses.create(
+                model="o4-mini-deep-research-2025-06-26",
+                input=[{
+                    "role": "user", 
+                    "content": [{"type": "input_text", "text": query}]
+                }],
+                tools=[{"type": "web_search_preview"}],
+                reasoning={"summary": "auto"}
+            )
+            
+            # Extract and format results
+            research_result = {
+                "research_findings": response.output[-1].content[0].text,
+                "citations": [
+                    {"title": c.title, "url": c.url} 
+                    for c in response.output[-1].content[0].annotations
+                ],
+                "layer_number": layer_number,
+                "timestamp": time.time(),
+                "success": True
+            }
+            
+            # Cache results
+            self.cache[cache_key] = research_result
+            print(f"Research completed for layer {layer_number} with {len(research_result['citations'])} citations")
+            return research_result
+            
+        except Exception as e:
+            print(f"Research failed for layer {layer_number}: {e}")
+            # Return fallback research context
+            return {
+                "research_findings": "Research temporarily unavailable. Proceeding with standard decision logic.",
+                "citations": [],
+                "layer_number": layer_number,
+                "timestamp": time.time(),
+                "success": False,
+                "error": str(e)
+            }
 
 
 @CrewBase
@@ -224,6 +318,37 @@ class DecisionCrew:
             "reasoning": reasoning,
             "raw_text": raw_text,
         }
+
+    def decide_with_research_context(self, layer_number: int, control_options, planned_controls, scores, research_context: Dict = None) -> Dict[str, Any]:
+        """Make decision with research context - DOES NOT modify original prompts"""
+        
+        # First get the normal decision using existing logic (unchanged)
+        base_decision = self.decide(layer_number, control_options, planned_controls, scores)
+        
+        # If research context available, enhance the reasoning explanation
+        if research_context and research_context.get("success", False):
+            # Extract key insights from research (first 300 chars)
+            research_summary = research_context["research_findings"][:300]
+            if len(research_context["research_findings"]) > 300:
+                research_summary += "..."
+            
+            # Enhance reasoning with research context
+            enhanced_reasoning = f"{base_decision['reasoning']}\n\nResearch Context: {research_summary}"
+            
+            return {
+                "best_option": base_decision["best_option"],  # Same decision
+                "reasoning": enhanced_reasoning,               # Enhanced explanation
+                "raw_text": base_decision["raw_text"],
+                "research_applied": True,
+                "research_citations": len(research_context.get("citations", []))
+            }
+        else:
+            # No research available or research failed - return original decision
+            return {
+                **base_decision,
+                "research_applied": False,
+                "research_citations": 0
+            }
 
 
 # Simple session caches (per campaign) to avoid re-initializing the crew for each request

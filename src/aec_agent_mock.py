@@ -24,7 +24,7 @@ from langchain_openai import AzureChatOpenAI
 from aec_agent_context_manager import AdamantineAeCContextManager
 
 try:
-    from manufacturing_agent.crew import OptionGenerationCrew, DecisionCrew, SafetyValidationCrew
+    from manufacturing_agent.crew import OptionGenerationCrew, DecisionCrew, SafetyValidationCrew, SimpleResearchService
     from pathlib import Path
     from dotenv import load_dotenv
     import importlib
@@ -78,17 +78,47 @@ def choose_option(layer: int, control_options: List[Dict], scores: List, planned
     decision_crew = DecisionCrew(llm=llm)
     safety_crew = SafetyValidationCrew(llm=llm)
     
+    # 1. Get research background FIRST (NEW)
+    research_context = None
+    try:
+        from openai import OpenAI
+        import os
+        
+        # Initialize OpenAI client for Deep Research
+        openai_client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
+        research_service = SimpleResearchService(openai_client)
+        
+        research_context = research_service.get_research_background(
+            layer_number=layer,
+            control_options=control_options,
+            planned_controls=planned_controls
+        )
+    except Exception as e:
+        print(f"Research failed: {e}")
+        research_context = None  # Continue without research
+    
     max_retries = 2
     safety_feedback = ""
     last_decision = None
     
     for attempt in range(max_retries + 1):
-        # Make decision - use feedback-enhanced method for retry attempts
+        # Make decision - use research-enhanced method for first attempt
         if attempt == 0:
-            decision = decision_crew.decide(layer_number=layer,
-                                           control_options=control_options,
-                                           planned_controls=planned_controls,
-                                           scores=scores)
+            # Use research-enhanced decision if available
+            if research_context and research_context.get("success", False):
+                decision = decision_crew.decide_with_research_context(
+                    layer_number=layer,
+                    control_options=control_options,
+                    planned_controls=planned_controls,
+                    scores=scores,
+                    research_context=research_context
+                )
+            else:
+                # Fallback to original method
+                decision = decision_crew.decide(layer_number=layer,
+                                               control_options=control_options,
+                                               planned_controls=planned_controls,
+                                               scores=scores)
         else:
             # Use the feedback from previous validation failure
             decision = decision_crew.decide_with_feedback(layer_number=layer,
@@ -147,6 +177,10 @@ def choose_option(layer: int, control_options: List[Dict], scores: List, planned
         "safety_feedback": safety_feedback,
         "used_fallback": "Safety fallback" in decision["reasoning"],
         "attempts_made": attempt + 1,
+        # NEW: Research-related fields
+        "research_available": research_context is not None and research_context.get("success", False),
+        "research_summary": research_context["research_findings"][:300] + "..." if research_context and research_context.get("success", False) and len(research_context["research_findings"]) > 300 else (research_context["research_findings"] if research_context and research_context.get("success", False) else None),
+        "research_citations": len(research_context["citations"]) if research_context and research_context.get("success", False) else 0,
     }
 
 @mcp.tool()
