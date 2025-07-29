@@ -12,10 +12,11 @@ generation_task:
 decision_task:
   description: >
     ROLE: Control Decision Agent
-    TASK: Choose the best option index for layer {layer_number} using the provided simulation scores = {scores} and control_options = {control_options}.
+    TASK: Choose the best option index for layer {layer_number} using the provided simulation scores = {scores}, control_options = {control_options}, and research_context = {research_context}.
+    RESEARCH INTEGRATION: You MUST incorporate the Azure AI Foundry Deep Research findings into your decision-making process. Consider the research insights on laser power optimization, dwell time analysis, parameter interactions, and manufacturing recommendations when evaluating options.
     FORMAT CONSTRAINTS: Return ONLY a valid JSON object (no Markdown, no code fences) with exactly two keys:
       • "best_option": integer (0‒N-1 where N = len(control_options))
-      • "reasoning":  string
+      • "reasoning":  string (must reference relevant research findings)
     The object must contain **no additional keys** and be directly parseable by `json.loads()`. Do not prepend or append any explanatory text.
     CONSISTENCY CHECK: Ensure the chosen index is within range; if scores list length is N, best_option ∈ [0, N-1].
     ANTI-HALLUCINATION TIP: Double-check numeric comparisons; never claim a larger number is lower.

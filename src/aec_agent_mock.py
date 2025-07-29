@@ -24,7 +24,7 @@ from langchain_openai import AzureChatOpenAI
 from aec_agent_context_manager import AdamantineAeCContextManager
 
 try:
-    from manufacturing_agent.crew import OptionGenerationCrew, DecisionCrew, SafetyValidationCrew, SimpleResearchService
+    from manufacturing_agent.crew import OptionGenerationCrew, DecisionCrew, SafetyValidationCrew, ResearchService
     from pathlib import Path
     from dotenv import load_dotenv
     import importlib
@@ -41,6 +41,37 @@ except ImportError as exc:
 agent_controller = AdamantineAeCContextManager()
 mcp = FastMCP("AnC_Agent", require_session=True, lifespan=agent_controller.lifespan)
 
+
+def get_foundry_config():
+    """
+    Load Azure AI Foundry configuration for deep research
+    Required for the research service to function
+    """
+    try:
+        # Check for Azure AI Foundry environment variables
+        foundry_endpoint = os.environ.get("AZURE_AI_FOUNDRY_ENDPOINT")
+        foundry_api_key = os.environ.get("AZURE_AI_FOUNDRY_API_KEY")
+        foundry_enabled = os.environ.get("AZURE_AI_FOUNDRY_ENABLED", "false").lower() == "true" 
+        
+        if foundry_enabled and foundry_endpoint and foundry_api_key:
+            return {
+                "enabled": True,
+                "endpoint": foundry_endpoint,
+                "api_key": foundry_api_key,
+                "region": "West US",  # Required for deep research
+                "model": "o3-deep-research",
+                "version": "2025-06-26"
+            }
+        else:
+            # Configuration not provided - research will be unavailable
+            return {
+                "enabled": False,
+                "note": "Azure AI Foundry configuration not provided - Deep Research unavailable"
+            }
+            
+    except Exception as e:
+        print(f"Error loading Azure AI Foundry config: {e}")
+        return {"enabled": False, "error": str(e)}
 
 def build_llm():
     #model_name = AGENT.get("model_name", "o4-mini-2025-04-16")
@@ -78,54 +109,45 @@ def choose_option(layer: int, control_options: List[Dict], scores: List, planned
     decision_crew = DecisionCrew(llm=llm)
     safety_crew = SafetyValidationCrew(llm=llm)
     
-    # 1. Get research background FIRST (NEW)
-    research_context = None
-    try:
-        from openai import OpenAI
-        import os
-        
-        # Initialize OpenAI client for Deep Research
-        openai_client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
-        research_service = SimpleResearchService(openai_client)
-        
-        research_context = research_service.get_research_background(
-            layer_number=layer,
-            control_options=control_options,
-            planned_controls=planned_controls
-        )
-    except Exception as e:
-        print(f"Research failed: {e}")
-        research_context = None  # Continue without research
+    # 1. Get research background FIRST (MANDATORY - Azure AI Foundry Deep Research)
+    # Load Azure AI Foundry configuration 
+    foundry_config = get_foundry_config()
+    
+    # Initialize Azure AI Foundry research service
+    research_service = ResearchService(foundry_config)
+    
+    # Get research background - this will raise exception if it fails
+    research_context = research_service.get_research_background(
+        layer_number=layer,
+        control_options=control_options,
+        planned_controls=planned_controls
+    )
     
     max_retries = 2
     safety_feedback = ""
     last_decision = None
     
     for attempt in range(max_retries + 1):
-        # Make decision - use research-enhanced method for first attempt
+        # Make decision with mandatory research context
         if attempt == 0:
-            # Use research-enhanced decision if available
-            if research_context and research_context.get("success", False):
-                decision = decision_crew.decide_with_research_context(
-                    layer_number=layer,
-                    control_options=control_options,
-                    planned_controls=planned_controls,
-                    scores=scores,
-                    research_context=research_context
-                )
-            else:
-                # Fallback to original method
-                decision = decision_crew.decide(layer_number=layer,
-                                               control_options=control_options,
-                                               planned_controls=planned_controls,
-                                               scores=scores)
+            # First attempt - normal decision with research
+            decision = decision_crew.decide(
+                layer_number=layer,
+                control_options=control_options,
+                planned_controls=planned_controls,
+                scores=scores,
+                research_context=research_context
+            )
         else:
-            # Use the feedback from previous validation failure
-            decision = decision_crew.decide_with_feedback(layer_number=layer,
-                                                         control_options=control_options,
-                                                         planned_controls=planned_controls,
-                                                         scores=scores,
-                                                         validation_feedback=safety_feedback)
+            # Retry with validation feedback
+            decision = decision_crew.decide_with_feedback(
+                layer_number=layer,
+                control_options=control_options,
+                planned_controls=planned_controls,
+                scores=scores,
+                research_context=research_context,
+                validation_feedback=safety_feedback
+            )
         
         # Validate decision with safety crew
         validation = safety_crew.validate(layer_number=layer,
@@ -177,10 +199,10 @@ def choose_option(layer: int, control_options: List[Dict], scores: List, planned
         "safety_feedback": safety_feedback,
         "used_fallback": "Safety fallback" in decision["reasoning"],
         "attempts_made": attempt + 1,
-        # NEW: Research-related fields
-        "research_available": research_context is not None and research_context.get("success", False),
-        "research_summary": research_context["research_findings"][:300] + "..." if research_context and research_context.get("success", False) and len(research_context["research_findings"]) > 300 else (research_context["research_findings"] if research_context and research_context.get("success", False) else None),
-        "research_citations": len(research_context["citations"]) if research_context and research_context.get("success", False) else 0,
+        # Research fields (mandatory Azure AI Foundry Deep Research)
+        "research_summary": research_context["research_findings"][:300] + "..." if len(research_context["research_findings"]) > 300 else research_context["research_findings"],
+        "research_citations": len(research_context["citations"]),
+        "research_parameters": research_context["parameter_context"],
     }
 
 @mcp.tool()

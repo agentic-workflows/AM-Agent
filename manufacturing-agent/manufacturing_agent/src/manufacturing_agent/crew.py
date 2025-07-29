@@ -3,99 +3,129 @@ from crewai.project import CrewBase, agent, crew, task
 from langchain_core.language_models import LLM
 from typing import Any, Dict
 import time
-import hashlib
+
 import json
 
-# Simple Research Service using OpenAI Deep Research API
-class SimpleResearchService:
-    """Simple service for manufacturing research using OpenAI Deep Research API"""
+# Azure AI Foundry Research Service 
+class ResearchService:
+    """Azure AI Foundry Deep Research service for manufacturing insights"""
     
-    def __init__(self, openai_client):
-        self.client = openai_client
-        self.cache = {}  # Simple parameter-based caching
-        self.cache_duration = 3600  # 1 hour cache
-    
-    def _generate_cache_key(self, layer_number: int, control_options) -> str:
-        """Generate cache key based on layer and parameter types"""
-        # Create simple hash from layer and parameter ranges
-        params_str = f"layer_{layer_number}"
-        if control_options:
-            # Extract parameter ranges for caching
-            powers = [opt.get('power', 0) for opt in control_options]
-            dwell_0s = [opt.get('dwell_0', 0) for opt in control_options]
-            dwell_1s = [opt.get('dwell_1', 0) for opt in control_options]
-            params_str += f"_power_{min(powers)}-{max(powers)}_dwell0_{min(dwell_0s)}-{max(dwell_0s)}_dwell1_{min(dwell_1s)}-{max(dwell_1s)}"
+    def __init__(self, foundry_config):
+        self.foundry_config = foundry_config
+        self.foundry_client = None
         
-        return hashlib.md5(params_str.encode()).hexdigest()
+        # Initialize Azure AI Foundry client
+        if foundry_config and foundry_config.get('enabled', False):
+            try:
+                self._initialize_foundry_client()
+                print("Azure AI Foundry Deep Research initialized (West US)")
+            except Exception as e:
+                print(f"Azure AI Foundry initialization failed: {e}")
+                raise
+        else:
+            print("Azure AI Foundry not configured - Deep Research unavailable")
+            raise ValueError("Azure AI Foundry configuration required for Deep Research")
     
-    def _is_cache_valid(self, cache_entry) -> bool:
-        """Check if cache entry is still valid"""
-        return time.time() - cache_entry.get('timestamp', 0) < self.cache_duration
+    def _initialize_foundry_client(self):
+        """Initialize Azure AI Foundry client"""
+        try:
+            from azure.ai.foundry.agents import Agent
+            from azure.ai.foundry.agents.tools import DeepResearchTool
+            
+            self.foundry_client = Agent(
+                model="o3-deep-research",
+                tools=[DeepResearchTool()],
+                endpoint=self.foundry_config['endpoint'],
+                api_key=self.foundry_config['api_key']
+            )
+        except ImportError:
+            print("Azure AI Foundry SDK not installed. Install: pip install azure-ai-foundry[agents]")
+            raise
+        except Exception as e:
+            print(f"Azure AI Foundry client initialization failed: {e}")
+            raise
+    
+
     
     def get_research_background(self, layer_number: int, control_options, planned_controls):
-        """Use OpenAI Deep Research API for AM literature background"""
+        """Azure AI Foundry Deep Research with web search and citations"""
         
-        # Check cache first
-        cache_key = self._generate_cache_key(layer_number, control_options)
-        if cache_key in self.cache and self._is_cache_valid(self.cache[cache_key]):
-            print(f"Using cached research for layer {layer_number}")
-            return self.cache[cache_key]
+        print(f"Conducting Azure AI Foundry Deep Research for layer {layer_number}...")
+        print("   - Using o3-deep-research model in West US")
+        print("   - Live web search with Bing integration")
+        print("   - Real citations and sources")
         
-        print(f"Conducting research for layer {layer_number}...")
+        # Extract parameter ranges
+        if control_options:
+            powers = [opt.get('power', 0) for opt in control_options]
+            dwell_0s = [opt.get('dwell_0', 0) for opt in control_options] 
+            dwell_1s = [opt.get('dwell_1', 0) for opt in control_options]
+            power_range = f"{min(powers)}-{max(powers)}W"
+            dwell0_range = f"{min(dwell_0s)}-{max(dwell_0s)}ms"
+            dwell1_range = f"{min(dwell_1s)}-{max(dwell_1s)}ms"
+        else:
+            power_range = dwell0_range = dwell1_range = "N/A"
         
-        # Create focused research query
-        query = f"""Research optimal control parameters for additive manufacturing layer {layer_number}:
+        research_query = f"""
+        Research latest developments in additive manufacturing control parameters for layer {layer_number} powder bed fusion processes.
         
-        Key areas to investigate:
-        - Laser power optimization for powder bed fusion processes
-        - Dwell time effects on layer quality, adhesion, and thermal management
-        - Parameter interactions and trade-offs between power, dwell_0, and dwell_1
-        - Recent advances in AM process control and optimization
-        - Quality control considerations for layer-by-layer building
+        Parameter Context:
+        - Layer number: {layer_number}
+        - Laser power range: {power_range}
+        - Dwell_0 time range: {dwell0_range}
+        - Dwell_1 time range: {dwell1_range}
         
-        Focus on practical insights that can inform parameter selection decisions for manufacturing engineers.
-        Provide specific recommendations when possible."""
+        Research Focus:
+        1. Find recent (2023-2025) research papers on laser power optimization for powder bed fusion
+        2. Look for latest dwell time studies and thermal management advances  
+        3. Search for new parameter interaction findings and optimization strategies
+        4. Find current industry best practices and case studies
+        5. Identify cutting-edge quality control methods and monitoring approaches
+        
+        Provide specific recommendations with citations from current literature and web sources.
+        Include publication dates, DOI links, and author information where available.
+        Focus on actionable insights for manufacturing engineers.
+        """
         
         try:
-            # Call Deep Research API
-            response = self.client.responses.create(
-                model="o4-mini-deep-research-2025-06-26",
-                input=[{
-                    "role": "user", 
-                    "content": [{"type": "input_text", "text": query}]
-                }],
-                tools=[{"type": "web_search_preview"}],
-                reasoning={"summary": "auto"}
-            )
+            # Call Azure AI Foundry Deep Research
+            response = self.foundry_client.complete(research_query)
             
-            # Extract and format results
+            # Extract essential results only
             research_result = {
-                "research_findings": response.output[-1].content[0].text,
-                "citations": [
-                    {"title": c.title, "url": c.url} 
-                    for c in response.output[-1].content[0].annotations
-                ],
+                "research_findings": response.content,
+                "citations": getattr(response, 'citations', []),
+                "web_sources": getattr(response, 'sources', []),
                 "layer_number": layer_number,
                 "timestamp": time.time(),
-                "success": True
+                "parameter_context": {
+                    "power_range": power_range,
+                    "dwell_0_range": dwell0_range,
+                    "dwell_1_range": dwell1_range
+                }
             }
             
-            # Cache results
-            self.cache[cache_key] = research_result
-            print(f"Research completed for layer {layer_number} with {len(research_result['citations'])} citations")
+            print(f"Azure AI Foundry Deep Research completed for layer {layer_number}")
+            print(f"   - Research content: {len(response.content)} chars")
+            print(f"   - Web citations: {len(getattr(response, 'citations', []))}")
+            print(f"   - Web sources: {len(getattr(response, 'sources', []))}")
+            
+            # Print the research results
+            print("=" * 80)
+            print(f"AZURE AI FOUNDRY DEEP RESEARCH RESULTS FOR LAYER {layer_number}")
+            print("Deep Research with Live Web Search & Citations")
+            print("=" * 80)
+            print(response.content)
+            print("=" * 80)
+            print("END OF AZURE AI FOUNDRY DEEP RESEARCH")
+            print("=" * 80)
+            
             return research_result
             
         except Exception as e:
-            print(f"Research failed for layer {layer_number}: {e}")
-            # Return fallback research context
-            return {
-                "research_findings": "Research temporarily unavailable. Proceeding with standard decision logic.",
-                "citations": [],
-                "layer_number": layer_number,
-                "timestamp": time.time(),
-                "success": False,
-                "error": str(e)
-            }
+            print(f"Azure AI Foundry Deep Research failed for layer {layer_number}: {e}")
+            # Raise error - research is mandatory
+            raise Exception(f"Mandatory Azure AI Foundry Deep Research failed for layer {layer_number}: {str(e)}")
 
 
 @CrewBase
@@ -197,15 +227,16 @@ class DecisionCrew:
             verbose=True,
         )
     
-    # Public helper
-    def decide(self, layer_number: int, control_options, planned_controls, scores) -> Dict[str, Any]:
-        """Run the crew once and return the chosen option index & reasoning."""
+    # Public helper - requires research context
+    def decide(self, layer_number: int, control_options, planned_controls, scores, research_context: Dict) -> Dict[str, Any]:
+        """Run the crew with mandatory research context and return the chosen option index & reasoning."""
 
         inputs = {
             "layer_number": layer_number,
             "control_options": control_options,
             "planned_controls": planned_controls,
             "scores": scores,
+            "research_context": research_context,
         }
 
         output = self.crew().kickoff(inputs=inputs)
@@ -240,7 +271,7 @@ class DecisionCrew:
             "raw_text": raw_text,
         }
 
-    def decide_with_feedback(self, layer_number: int, control_options, planned_controls, scores, validation_feedback: str = None) -> Dict[str, Any]:
+    def decide_with_feedback(self, layer_number: int, control_options, planned_controls, scores, research_context: Dict, validation_feedback: str = None) -> Dict[str, Any]:
         """Run the crew with additional feedback from safety validation."""
         
         # Create a modified task description that includes the validation feedback
@@ -287,7 +318,7 @@ class DecisionCrew:
             output = crew.kickoff(inputs=base_inputs)
         else:
             # Use the regular method if no feedback
-            return self.decide(layer_number, control_options, planned_controls, scores)
+            return self.decide(layer_number, control_options, planned_controls, scores, research_context)
         
         raw_text = str(output.raw) if hasattr(output, "raw") else str(output)
 
