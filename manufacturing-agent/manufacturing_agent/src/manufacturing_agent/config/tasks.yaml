@@ -12,14 +12,39 @@ generation_task:
 decision_task:
   description: >
     ROLE: Control Decision Agent
-    TASK: Choose the best option index for layer {layer_number} using the provided simulation scores = {scores} and control_options = {control_options}.
+    TASK: Choose the best option index for layer {layer_number} using the provided simulation scores = {scores}, control_options = {control_options}, and research_context = {research_context}.
+    RESEARCH INTEGRATION: You MUST incorporate the Azure AI Foundry Deep Research findings into your decision-making process. Consider the research insights on laser power optimization, dwell time analysis, parameter interactions, and manufacturing recommendations when evaluating options.
     FORMAT CONSTRAINTS: Return ONLY a valid JSON object (no Markdown, no code fences) with exactly two keys:
       • "best_option": integer (0‒N-1 where N = len(control_options))
-      • "reasoning":  string
+      • "reasoning":  string (must reference relevant research findings)
     The object must contain **no additional keys** and be directly parseable by `json.loads()`. Do not prepend or append any explanatory text.
     CONSISTENCY CHECK: Ensure the chosen index is within range; if scores list length is N, best_option ∈ [0, N-1].
     ANTI-HALLUCINATION TIP: Double-check numeric comparisons; never claim a larger number is lower.
-    Scoring Hint: Typically (but not always), a lower score indicates better quality. For example, in [5, 10], option 0 is preferred since 5 < 10.
-    ⚠️ Caution: Do NOT hallucinate reasoning. For example, if scores = [2, 3, 5], do NOT say 5 is the lowest. Use correct comparisons only.
+    Scoring Hint: A lower score indicates better quality. For example, in [5, 10], option 0 is preferred since 5 < 10.
+    ⚠️ Caution: Do NOT hallucinate reasoning. For example, if scores = [2, 3, 5], 2 is the lowest score and should be chosen. Use correct numerical comparisons only.
+    After you have chosen the best option, you should double check the scores to make sure you have chosen the correct lowest score option.
   expected_output: >
     A JSON string with the keys `best_option` and `reasoning`. 
+
+safety_validation_task:
+  description: >
+    ROLE: Safety Validation Agent
+    TASK: Validate the decision made by the decision_maker for layer {layer_number}. 
+    INPUT DATA: decision_result = {decision_result}, control_options = {control_options}, scores = {scores}
+    VALIDATION CRITERIA:
+      • Check if "best_option" index is within valid range [0, {max_option_index}]
+      • Verify that reasoning is provided and non-empty
+      • Ensure the chosen option corresponds to a reasonable score (preferably lowest or close to lowest)
+      • Check for logical consistency between reasoning and choice
+      • Validate JSON structure contains required keys
+    SAFETY REQUIREMENTS:
+      • Option index must not exceed available options
+      • Decision should align with score-based optimization (lower scores are better)
+      • Reasoning should not contain contradictory statements
+    FORMAT CONSTRAINTS: Return ONLY a valid JSON object (no Markdown, no code fences) with exactly three keys:
+      • "is_valid": boolean (true if decision passes all validation checks)
+      • "feedback": string (explanation of validation results, issues found, or confirmation)
+      • "requires_regeneration": boolean (true if decision_maker should retry)
+    The object must be directly parseable by `json.loads()`.
+  expected_output: >
+    A JSON object with keys `is_valid`, `feedback`, and `requires_regeneration`. 
