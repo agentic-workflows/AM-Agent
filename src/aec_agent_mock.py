@@ -13,18 +13,21 @@ from utils import build_llm
 # Add the project root to Python path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
+# Disable CrewAI/OpenTelemetry telemetry to avoid external calls/timeouts
+os.environ["CREWAI_DISABLE_TELEMETRY"] = "true"
+os.environ["OTEL_SDK_DISABLED"] = "true"
+
 import numpy as np
 import uvicorn
 
 from mcp.server.fastmcp import FastMCP
 import pathlib
 from flowcept.configs import AGENT
-# from langchain_openai import ChatOpenAI
 from langchain_openai import AzureChatOpenAI
 from aec_agent_context_manager import AdamantineAeCContextManager
 
 try:
-    from manufacturing_agent.crew import OptionGenerationCrew, DecisionCrew, SafetyValidationCrew, ResearchService
+    from manufacturing_agent.crew import OptionGenerationCrew, DecisionCrew, SafetyValidationCrew, CitationClassificationCrew, ResearchService
     from pathlib import Path
     from dotenv import load_dotenv
     import importlib
@@ -42,36 +45,34 @@ agent_controller = AdamantineAeCContextManager()
 mcp = FastMCP("AnC_Agent", require_session=True, lifespan=agent_controller.lifespan)
 
 
-def get_foundry_config():
+def get_perplexity_config():
     """
-    Load Azure AI Foundry configuration for deep research
+    Load Perplexity configuration for deep research
     Required for the research service to function
     """
     try:
-        # Check for Azure AI Foundry environment variables
-        foundry_endpoint = os.environ.get("AZURE_AI_FOUNDRY_ENDPOINT")
-        foundry_api_key = os.environ.get("AZURE_AI_FOUNDRY_API_KEY")
-        foundry_enabled = os.environ.get("AZURE_AI_FOUNDRY_ENABLED", "false").lower() == "true" 
+        # Check for Perplexity environment variables
+        perplexity_api_key = os.environ.get("PERPLEXITY_API_KEY")
+        perplexity_enabled = os.environ.get("PERPLEXITY_ENABLED", "true").lower() == "true" 
         
-        if foundry_enabled and foundry_endpoint and foundry_api_key:
+        if perplexity_enabled and perplexity_api_key:
             return {
-                "enabled": True,
-                "endpoint": foundry_endpoint,
-                "api_key": foundry_api_key,
-                "region": "West US",  # Required for deep research
-                "model": "o3-deep-research",
-                "version": "2025-06-26"
+                "api_key": perplexity_api_key,
+                "model": "sonar-deep-research",
+                "endpoint": "https://api.perplexity.ai/chat/completions",
+                "temperature": 0.2,
+                "timeout": 600
             }
         else:
             # Configuration not provided - research will be unavailable
             return {
-                "enabled": False,
-                "note": "Azure AI Foundry configuration not provided - Deep Research unavailable"
+                "api_key": None,
+                "note": "Perplexity API key not provided - Deep Research unavailable"
             }
             
     except Exception as e:
-        print(f"Error loading Azure AI Foundry config: {e}")
-        return {"enabled": False, "error": str(e)}
+        print(f"Error loading Perplexity config: {e}")
+        return {"api_key": None, "error": str(e)}
 
 def build_llm():
     #model_name = AGENT.get("model_name", "o4-mini-2025-04-16")
@@ -107,16 +108,16 @@ def choose_option(layer: int, control_options: List[Dict], scores: List, planned
     history = ctx.request_context.lifespan_context.history
     
     decision_crew = DecisionCrew(llm=llm)
+    citation_crew = CitationClassificationCrew(llm=llm)
     safety_crew = SafetyValidationCrew(llm=llm)
     
-    # 1. Get research background FIRST (MANDATORY - Azure AI Foundry Deep Research)
-    # Load Azure AI Foundry configuration 
-    foundry_config = get_foundry_config()
+    # Step 1: Run Decision and Research in Parallel
+    print(f"\n🔄 Starting Parallel Processing for Layer {layer}...")
     
-    # Initialize Azure AI Foundry research service
-    research_service = ResearchService(foundry_config)
-    
-    # Get research background - this will raise exception if it fails
+    # Start Deep Research (runs independently)
+    print(f"📚 Launching deep research analysis...")
+    perplexity_config = get_perplexity_config()
+    research_service = ResearchService(perplexity_config)
     research_context = research_service.get_research_background(
         layer_number=layer,
         control_options=control_options,
@@ -126,36 +127,49 @@ def choose_option(layer: int, control_options: List[Dict], scores: List, planned
     max_retries = 2
     safety_feedback = ""
     last_decision = None
+    final_citation_analysis = None
     
     for attempt in range(max_retries + 1):
-        # Make decision with mandatory research context
+        # Step 2: Make Independent Decision (no research input)
         if attempt == 0:
-            # First attempt - normal decision with research
+            # First attempt - independent decision
+            print(f"🎯 Making independent decision (attempt {attempt + 1})...")
             decision = decision_crew.decide(
                 layer_number=layer,
                 control_options=control_options,
                 planned_controls=planned_controls,
-                scores=scores,
-                research_context=research_context
+                scores=scores
             )
         else:
             # Retry with validation feedback
+            print(f"🔄 Retrying decision with feedback (attempt {attempt + 1})...")
             decision = decision_crew.decide_with_feedback(
                 layer_number=layer,
                 control_options=control_options,
                 planned_controls=planned_controls,
                 scores=scores,
-                research_context=research_context,
                 validation_feedback=safety_feedback
             )
         
-        # Validate decision with safety crew
+        # Step 3: Analyze Literature Attitude (paper-by-paper evaluation)
+        print(f"📊 Evaluating literature attitude against decision...")
+        citation_analysis = citation_crew.classify(
+            layer_number=layer,
+            decision_result=decision,
+            research_context=research_context,
+            control_options=control_options
+        )
+        
+        # 3. Validate decision with safety crew
         validation = safety_crew.validate(layer_number=layer,
                                          decision_result=decision,
                                          control_options=control_options,
                                          scores=scores)
         
         safety_feedback = validation["feedback"]
+        
+        # Store the citation analysis for the current attempt
+        final_citation_analysis = citation_analysis
         
         # If valid, break out of retry loop
         if validation["is_valid"]:
@@ -174,6 +188,15 @@ def choose_option(layer: int, control_options: List[Dict], scores: List, planned
                 "raw_text": f'{{"best_option": {correct_option}, "reasoning": "Safety fallback selection"}}'
             }
             safety_feedback += f" [Applied mathematical fallback to option {correct_option}]"
+            
+            # Run citation analysis on fallback decision
+            print(f"📊 Evaluating literature attitude against fallback decision...")
+            final_citation_analysis = citation_crew.classify(
+                layer_number=layer,
+                decision_result=decision,
+                research_context=research_context,
+                control_options=control_options
+            )
             break
 
     # Final validation to ensure our decision is correct
@@ -199,10 +222,18 @@ def choose_option(layer: int, control_options: List[Dict], scores: List, planned
         "safety_feedback": safety_feedback,
         "used_fallback": "Safety fallback" in decision["reasoning"],
         "attempts_made": attempt + 1,
-        # Research fields (mandatory Azure AI Foundry Deep Research)
         "research_summary": research_context["research_findings"][:300] + "..." if len(research_context["research_findings"]) > 300 else research_context["research_findings"],
         "research_citations": len(research_context["citations"]),
         "research_parameters": research_context["parameter_context"],
+        # Literature attitude analysis (NEW)
+        "literature_attitude": final_citation_analysis["overall_attitude"] if final_citation_analysis else "NO_DATA",
+        "literature_distribution": final_citation_analysis["distribution"] if final_citation_analysis else {"positive": 0, "neutral": 0, "negative": 0},
+        "total_papers_analyzed": final_citation_analysis["total_papers"] if final_citation_analysis else 0,
+        "paper_by_paper_analysis": final_citation_analysis["paper_analyses"] if final_citation_analysis else [],
+        "decision_vs_literature": {
+            "decision": final_citation_analysis["decision_summary"] if final_citation_analysis else {},
+            "literature_attitude": final_citation_analysis["overall_attitude"] if final_citation_analysis else "NO_DATA"
+        }
     }
 
 @mcp.tool()

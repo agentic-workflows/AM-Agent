@@ -12,11 +12,11 @@ generation_task:
 decision_task:
   description: >
     ROLE: Control Decision Agent
-    TASK: Choose the best option index for layer {layer_number} using the provided simulation scores = {scores}, control_options = {control_options}, and research_context = {research_context}.
-    RESEARCH INTEGRATION: You MUST incorporate the Azure AI Foundry Deep Research findings into your decision-making process. Consider the research insights on laser power optimization, dwell time analysis, parameter interactions, and manufacturing recommendations when evaluating options.
+    TASK: Choose the best option index for layer {layer_number} using the provided simulation scores = {scores} and control_options = {control_options}.
+    DECISION CRITERIA: Select the option with the LOWEST simulation score, as lower scores indicate better manufacturing quality. Consider the parameter values and their potential impact on manufacturing outcomes.
     FORMAT CONSTRAINTS: Return ONLY a valid JSON object (no Markdown, no code fences) with exactly two keys:
       • "best_option": integer (0‒N-1 where N = len(control_options))
-      • "reasoning":  string (must reference relevant research findings)
+      • "reasoning":  string (explain why this option has the best score and parameters)
     The object must contain **no additional keys** and be directly parseable by `json.loads()`. Do not prepend or append any explanatory text.
     CONSISTENCY CHECK: Ensure the chosen index is within range; if scores list length is N, best_option ∈ [0, N-1].
     ANTI-HALLUCINATION TIP: Double-check numeric comparisons; never claim a larger number is lower.
@@ -47,4 +47,33 @@ safety_validation_task:
       • "requires_regeneration": boolean (true if decision_maker should retry)
     The object must be directly parseable by `json.loads()`.
   expected_output: >
-    A JSON object with keys `is_valid`, `feedback`, and `requires_regeneration`. 
+    A JSON object with keys `is_valid`, `feedback`, and `requires_regeneration`.
+
+citation_classification_task:
+  description: >
+    ROLE: Aggregated Citation Synthesis Agent
+    TASK: Analyze all provided paper abstracts together to determine whether the overall literature supports the manufacturing decision for layer {layer_number}.
+    DECISION DETAILS:
+      • Chosen Parameters: power = {chosen_power}W, dwell_0 = {chosen_dwell_0}ms, dwell_1 = {chosen_dwell_1}ms
+      • Decision Reasoning: {decision_reasoning}
+    PAPERS:
+      • You are given a JSON array containing {num_papers} papers under the variable `papers_json`.
+      • Each paper object has: paper_index, title, authors, year, abstract, url.
+    ANALYSIS REQUIREMENTS:
+      • Use ONLY the abstracts. Do not assume access to full text.
+      • Produce ONE overall classification for all papers combined.
+      • Provide a concise reasoning that synthesizes cross-paper evidence.
+      • Include up to 5 evidence items referencing specific papers with a brief quote each (<= 200 chars).
+      • Classify as one of: positive, neutral, negative, or mixed (if evidence points both ways).
+    INPUT:
+      papers_json: {papers_json}
+    OUTPUT FORMAT (STRICT): Return ONLY a valid JSON object (no Markdown, no code fences) with exactly these keys:
+      • "classification": string (one of "positive", "neutral", "negative", "mixed")
+      • "confidence": float (0.0-1.0)
+      • "reasoning": string (concise synthesis referencing key trends across papers)
+      • "evidence": array of 0-5 objects with keys {"paper_index", "title", "url", "quote"}
+    VALIDATION:
+      • Ensure the JSON is directly parseable by `json.loads()`.
+      • Do not include any text before or after the JSON object.
+  expected_output: >
+    A JSON object with keys `classification`, `confidence`, `reasoning`, and `evidence`.
