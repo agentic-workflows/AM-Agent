@@ -15,9 +15,11 @@ class AeCContext:
     ----------
     tasks : list of dict
         A list of task messages received from the message queue. Each task message is stored as a dictionary.
+    user_messages : dict of int -> str
+        A dictionary mapping layer numbers to user messages. Empty string means no user message for that layer.
     """
-
     history: List[Dict]
+    user_messages: Dict[int, str]
 
 
 class AdamantineAeCContextManager(BaseAgentContextManager):
@@ -28,7 +30,15 @@ class AdamantineAeCContextManager(BaseAgentContextManager):
     def message_handler(self, msg_obj: Dict) -> bool:
         if msg_obj.get('type', '') == 'task':
             subtype = msg_obj.get("subtype", '')
-            if subtype == 'call_agent_task':
+            
+            # Handle data_message subtype to capture user_messages
+            if subtype == 'data_message':
+                used_data = msg_obj.get("used", {})
+                if "user_messages" in used_data:
+                    print("📝 Received user messages from HMI mock")
+                    self.context.user_messages.update(used_data["user_messages"])
+                    print(f"Stored user messages for {len(self.context.user_messages)} layers")
+            elif subtype == 'call_agent_task':
                 print(msg_obj)
                 tool_name = msg_obj["custom_metadata"]["tool_name"]
                 campaign_id = msg_obj.get("campaign_id", None)
@@ -47,6 +57,7 @@ class AdamantineAeCContextManager(BaseAgentContextManager):
                         self.context.history.append(this_history)
                 else:
                     self.logger.error(f"Something wrong happened when running tool {tool_name}.")
+            #  self.context.history.append(this_history)
             elif subtype == 'agent_task':
                 print('Tool result', msg_obj["activity_id"])
             if msg_obj.get("subtype", '') == "llm_query":
@@ -63,4 +74,4 @@ class AdamantineAeCContextManager(BaseAgentContextManager):
         return True
 
     def reset_context(self):
-        self.context = AeCContext(history=[])
+        self.context = AeCContext(history=[], user_messages={})

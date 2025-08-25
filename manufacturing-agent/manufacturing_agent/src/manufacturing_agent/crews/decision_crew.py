@@ -45,7 +45,7 @@ class DecisionCrew:
         )
     
     # Public helper - independent decision making
-    def decide(self, layer_number: int, control_options, planned_controls, scores) -> Dict[str, Any]:
+    def decide(self, layer_number: int, control_options, planned_controls, scores, user_message: str = "") -> Dict[str, Any]:
         """Run the crew independently and return the chosen option index & reasoning."""
 
         inputs = {
@@ -53,6 +53,7 @@ class DecisionCrew:
             "control_options": control_options,
             "planned_controls": planned_controls,
             "scores": scores,
+            "user_message": user_message,
         }
 
         output = self.crew().kickoff(inputs=inputs)
@@ -88,7 +89,7 @@ class DecisionCrew:
             "raw_text": raw_text,
         }
 
-    def decide_with_feedback(self, layer_number: int, control_options, planned_controls, scores, validation_feedback: str = None) -> Dict[str, Any]:
+    def decide_with_feedback(self, layer_number: int, control_options, planned_controls, scores, validation_feedback: str = None, user_message: str = "") -> Dict[str, Any]:
         """Run the crew with additional feedback from safety validation."""
         
         # Create a modified task description that includes the validation feedback
@@ -97,6 +98,7 @@ class DecisionCrew:
             "control_options": control_options,
             "planned_controls": planned_controls,
             "scores": scores,
+            "user_message": user_message,
         }
         
         if validation_feedback:
@@ -135,7 +137,7 @@ class DecisionCrew:
             output = crew.kickoff(inputs=base_inputs)
         else:
             # Use the regular method if no feedback
-            return self.decide(layer_number, control_options, planned_controls, scores, research_context)
+            return self.decide(layer_number, control_options, planned_controls, scores, user_message)
         
         raw_text = str(output.raw) if hasattr(output, "raw") else str(output)
 

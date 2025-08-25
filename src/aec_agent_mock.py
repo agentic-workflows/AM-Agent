@@ -102,11 +102,20 @@ def generate_options_set(layer: int, planned_controls, number_of_options=4, camp
 
 @mcp.tool()
 @agent_flowcept_task  # Must be in this order. @mcp.tool then @flowcept_task
-def choose_option(layer: int, control_options: List[Dict], scores: List, planned_controls: List[Dict], campaign_id: str=None):
+def choose_option(layer: int, control_options: List[Dict], scores: List, planned_controls: List[Dict], user_message: str = "", campaign_id: str=None):
     llm = build_llm()
     ctx = mcp.get_context()
     history = ctx.request_context.lifespan_context.history
     
+    # Get user message from context if not provided directly
+    if not user_message and hasattr(ctx.request_context.lifespan_context, 'user_messages'):
+        user_message = ctx.request_context.lifespan_context.user_messages.get(layer, "")
+    
+    # Store user message in context for this layer
+    if hasattr(ctx.request_context.lifespan_context, 'user_messages'):
+        ctx.request_context.lifespan_context.user_messages[layer] = user_message
+    
+    print(f"📝 User message for layer {layer}: '{user_message}'" if user_message else f"📝 No user message for layer {layer}")
     decision_crew = DecisionCrew(llm=llm)
     citation_crew = CitationClassificationCrew(llm=llm)
     safety_crew = SafetyValidationCrew(llm=llm)
@@ -138,7 +147,8 @@ def choose_option(layer: int, control_options: List[Dict], scores: List, planned
                 layer_number=layer,
                 control_options=control_options,
                 planned_controls=planned_controls,
-                scores=scores
+                scores=scores,
+                user_message=user_message
             )
         else:
             # Retry with validation feedback
@@ -148,7 +158,8 @@ def choose_option(layer: int, control_options: List[Dict], scores: List, planned
                 control_options=control_options,
                 planned_controls=planned_controls,
                 scores=scores,
-                validation_feedback=safety_feedback
+                validation_feedback=safety_feedback,
+                user_message=user_message
             )
         
         # Step 3: Analyze Literature Attitude (paper-by-paper evaluation)
@@ -211,7 +222,18 @@ def choose_option(layer: int, control_options: List[Dict], scores: List, planned
 
     human_option = int(np.argmin(scores))
     attention_flag = human_option is not None and decision["best_option"] != human_option
-
+    
+    # Determine research support boolean based on literature attitude
+    literature_attitude = final_citation_analysis["overall_attitude"] if final_citation_analysis else "NO_DATA"
+    if literature_attitude == "POSITIVE":
+        research_supports_decision = True
+    elif literature_attitude == "NEGATIVE":
+        research_supports_decision = False
+    else:  # NEUTRAL, MIXED, NO_DATA
+        research_supports_decision = None
+    
+    # Additional attention flag for literature support
+    literature_attention_flag = research_supports_decision is False
     return {
         "option": decision["best_option"],
         "explanation": decision["reasoning"],
@@ -225,15 +247,21 @@ def choose_option(layer: int, control_options: List[Dict], scores: List, planned
         "research_summary": research_context["research_findings"][:300] + "..." if len(research_context["research_findings"]) > 300 else research_context["research_findings"],
         "research_citations": len(research_context["citations"]),
         "research_parameters": research_context["parameter_context"],
-        # Literature attitude analysis (NEW)
-        "literature_attitude": final_citation_analysis["overall_attitude"] if final_citation_analysis else "NO_DATA",
+        # Literature attitude analysis
+        "literature_attitude": literature_attitude,
         "literature_distribution": final_citation_analysis["distribution"] if final_citation_analysis else {"positive": 0, "neutral": 0, "negative": 0},
         "total_papers_analyzed": final_citation_analysis["total_papers"] if final_citation_analysis else 0,
         "paper_by_paper_analysis": final_citation_analysis["paper_analyses"] if final_citation_analysis else [],
         "decision_vs_literature": {
             "decision": final_citation_analysis["decision_summary"] if final_citation_analysis else {},
-            "literature_attitude": final_citation_analysis["overall_attitude"] if final_citation_analysis else "NO_DATA"
-        }
+            "literature_attitude": literature_attitude
+        },
+        # NEW: Research support boolean and related fields
+        "research_supports_decision": research_supports_decision,
+        "research_support_confidence": final_citation_analysis.get("confidence", 0.0) if final_citation_analysis else 0.0,
+        "literature_attention_flag": literature_attention_flag,
+        "user_message": user_message,
+        "user_message_provided": bool(user_message.strip())
     }
 
 @mcp.tool()
