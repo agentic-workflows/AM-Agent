@@ -30,15 +30,11 @@ class AdamantineAeCContextManager(BaseAgentContextManager):
     def message_handler(self, msg_obj: Dict) -> bool:
         if msg_obj.get('type', '') == 'task':
             subtype = msg_obj.get("subtype", '')
+            activity_id = msg_obj.get("activity_id", '')
             
             # Handle data_message subtype to capture user_messages
-            if subtype == 'data_message':
-                used_data = msg_obj.get("used", {})
-                if "user_messages" in used_data:
-                    print("📝 Received user messages from HMI mock")
-                    self.context.user_messages.update(used_data["user_messages"])
-                    print(f"Stored user messages for {len(self.context.user_messages)} layers")
-            elif subtype == 'call_agent_task':
+            # TODO:
+            if subtype == 'call_agent_task':
                 print(msg_obj)
                 tool_name = msg_obj["custom_metadata"]["tool_name"]
                 campaign_id = msg_obj.get("campaign_id", None)
@@ -57,18 +53,20 @@ class AdamantineAeCContextManager(BaseAgentContextManager):
                         self.context.history.append(this_history)
                 else:
                     self.logger.error(f"Something wrong happened when running tool {tool_name}.")
-            #  self.context.history.append(this_history)
             elif subtype == 'agent_task':
+                if activity_id == "publish_experiment_setup":
+                    # AMC agent
+                    print("Start the setup")
+                    pass
+                elif activity_id == "hmi_message":
+                    used_data = msg_obj.get("used", {})
+                    if "user_messages" in used_data:
+                        print("Received user messages from HMI mock")
+                        self.context.user_messages.update(used_data["user_messages"])
+                        print(f"Stored user messages for {len(self.context.user_messages)} layers")
                 print('Tool result', msg_obj["activity_id"])
             if msg_obj.get("subtype", '') == "llm_query":
                 print("Msg from agent.")
-                #
-                # msg_output = msg_obj.get("generated", {})["response"]
-                #
-                # simulation_output = simulate_layer(self._layers_count, msg_output)
-                #
-                # run_tool_async("ask_agent", simulation_output)
-
         else:
             print(f"We got a msg with different type: {msg_obj.get("type", None)}")
         return True

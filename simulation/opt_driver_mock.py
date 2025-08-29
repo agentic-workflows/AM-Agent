@@ -60,8 +60,8 @@ class AdamantineDriver(BaseConsumer):
         if msg_type == 'task':
             subtype = msg_obj.get("subtype", '')
             if subtype == 'agent_task':
-                tool_name = msg_obj.get("activity_id")
-                if tool_name == "generate_options_set":
+                activity_id = msg_obj.get("activity_id")
+                if activity_id == "generate_options_set":
                     tool_output = msg_obj.get("generated")
                     self._current_controls_options = tool_output.get("control_options")
                     l2_error = simulate_layer(layer_number=self._layers_count, control_options=self._current_controls_options)
@@ -77,8 +77,18 @@ class AdamantineDriver(BaseConsumer):
                         custom_metadata={"tool_name": "choose_option"},
                         used=used
                     ).send()
+                if activity_id == "publish_experiment_setup":
+                    print("Received start up `publish_experiment_setup`. We can start the control now.")
+                    used = msg_obj.get("used")
+                    self._planned_controls = used.get("planned_control")
+                    self._number_of_options = used.get("number_of_options")
+                    self._max_layers = len(self._planned_controls)
+                    print("This is the Planned Control:")
+                    print(json.dumps(self._planned_controls))
+                    print("------------")
+                    print(f"We are going to simulate from layer {self._layers_count} to layer {self._max_layers-1}.")
 
-                elif tool_name == "choose_option":
+                elif activity_id == "choose_option":
                     tool_output = msg_obj.get("generated")
                     if tool_output is None:
                         self.logger.error(f"An unexpected error happened!: Tool output is None. Msg was: {msg_obj}")
@@ -107,16 +117,6 @@ class AdamantineDriver(BaseConsumer):
                             number_of_options=self._number_of_options
                         )
                     ).send()
-            elif subtype == 'data_message':
-                print("Received start up `data_message`. We can start the control now.")
-                used = msg_obj.get("used")
-                self._planned_controls = used.get("planned_control")
-                self._number_of_options = used.get("number_of_options")
-                self._max_layers = len(self._planned_controls)
-                print("This is the Planned Control:")
-                print(json.dumps(self._planned_controls))
-                print("------------")
-                print(f"We are going to simulate from layer {self._layers_count} to layer {self._max_layers-1}.")
 
                 FlowceptTask(
                     subtype="call_agent_task",

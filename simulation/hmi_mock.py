@@ -65,10 +65,13 @@ FlowceptTask(
         "planned_control": planned_control,
         "user_messages": user_messages,
     },
-    subtype="data_message",
-    activity_id="publish_experiment_setup"
+    activity_id="choose_option",
+    subtype="agent_task"
 ).send()
 
 print("Msg sent!")
 
 f.stop()
+
+    # subtype="data_message",
+    # activity_id="publish_experiment_setup"
