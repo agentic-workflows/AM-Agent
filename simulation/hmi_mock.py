@@ -65,7 +65,7 @@ FlowceptTask(
         "planned_control": planned_control,
         "user_messages": user_messages,
     },
-    activity_id="choose_option",
+    activity_id="publish_experiment_setup",
     subtype="agent_task"
 ).send()
 

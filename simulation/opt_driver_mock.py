@@ -87,6 +87,18 @@ class AdamantineDriver(BaseConsumer):
                     print(json.dumps(self._planned_controls))
                     print("------------")
                     print(f"We are going to simulate from layer {self._layers_count} to layer {self._max_layers-1}.")
+                    
+                    # Start the first layer generation
+                    FlowceptTask(
+                        subtype="call_agent_task",
+                        activity_id="call_generate_options_set",
+                        custom_metadata={"tool_name": "generate_options_set"},
+                        used=dict(
+                            layer=self._layers_count,
+                            planned_controls=self._planned_controls,
+                            number_of_options=self._number_of_options
+                        )
+                    ).send()
 
                 elif activity_id == "choose_option":
                     tool_output = msg_obj.get("generated")
@@ -117,17 +129,6 @@ class AdamantineDriver(BaseConsumer):
                             number_of_options=self._number_of_options
                         )
                     ).send()
-
-                FlowceptTask(
-                    subtype="call_agent_task",
-                    activity_id="call_generate_options_set",
-                    custom_metadata={"tool_name": "generate_options_set"},
-                    used=dict(
-                        layer=self._layers_count,
-                        planned_controls=self._planned_controls,
-                        number_of_options=self._number_of_options
-                    )
-                ).send()
 
         elif msg_type == 'workflow':
             print("Got workflow msg")

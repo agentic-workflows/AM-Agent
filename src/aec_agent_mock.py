@@ -8,7 +8,7 @@ from typing import Dict, List
 from flowcept.agents.agent_client import run_tool
 from flowcept.instrumentation.flowcept_agent_task import FlowceptLLM, agent_flowcept_task, get_current_context_task
 from flowcept.configs import AGENT_HOST, AGENT_PORT
-from utils import build_llm
+# Using local build_llm function instead of utils.build_llm
 
 # Add the project root to Python path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
