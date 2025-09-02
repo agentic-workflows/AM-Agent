@@ -61,7 +61,7 @@ def get_perplexity_config():
                 "model": "sonar-deep-research",
                 "endpoint": "https://api.perplexity.ai/chat/completions",
                 "temperature": 0.2,
-                "timeout": 600
+                "timeout": 600  # Keep original timeout to avoid breaking API calls
             }
         else:
             # Configuration not provided - research will be unavailable
@@ -115,23 +115,78 @@ def choose_option(layer: int, control_options: List[Dict], scores: List, planned
     if hasattr(ctx.request_context.lifespan_context, 'user_messages'):
         ctx.request_context.lifespan_context.user_messages[layer] = user_message
     
-    print(f"📝 User message for layer {layer}: '{user_message}'" if user_message else f"📝 No user message for layer {layer}")
+    print(f"User message for layer {layer}: '{user_message}'" if user_message else f"📝 No user message for layer {layer}")
     decision_crew = DecisionCrew(llm=llm)
     citation_crew = CitationClassificationCrew(llm=llm)
     safety_crew = SafetyValidationCrew(llm=llm)
     
     # Step 1: Run Decision and Research in Parallel
-    print(f"\n🔄 Starting Parallel Processing for Layer {layer}...")
+    print(f"\nStarting Parallel Processing for Layer {layer}...")
     
     # Start Deep Research (runs independently)
     print(f"📚 Launching deep research analysis...")
-    perplexity_config = get_perplexity_config()
-    research_service = ResearchService(perplexity_config)
-    research_context = research_service.get_research_background(
-        layer_number=layer,
+    
+    USE_MOCK_RESEARCH = False  # Set to False to use real Perplexity API
+    
+    if USE_MOCK_RESEARCH:
+        print(f"Using MOCK research service for testing...")
+        from mock_research_service import MockResearchService
+        research_service = MockResearchService()
+    else:
+        print(f"Using REAL Perplexity research service...")
+        perplexity_config = get_perplexity_config()
+        research_service = ResearchService(perplexity_config)
+    # Determine if this is the first processed request in the current lifespan
+    is_first_request = False
+    lifespan_ctx = ctx.request_context.lifespan_context
+    if hasattr(lifespan_ctx, 'research_started'):
+        research_already_started = getattr(lifespan_ctx, 'research_started')
+        is_first_request = not research_already_started
+        print(f"🔍 Research status check: research_started={research_already_started}, is_first_request={is_first_request}")
+    else:
+        is_first_request = True
+        print(f"🔍 No research status found - treating as first request: is_first_request={is_first_request}")
+        try:
+            setattr(lifespan_ctx, 'research_started', False)
+        except Exception:
+            pass
+
+    research_context = research_service.get_research_background_strict_first_only(
+        is_first_request=is_first_request,
         control_options=control_options,
-        planned_controls=planned_controls
+        planned_controls=planned_controls,
+        force=False
     )
+
+    # Only mark research as started if it actually succeeded (not skipped and has citations)
+    if is_first_request and not research_context.get("skipped", False):
+        # Check if research actually produced results
+        citations = research_context.get("citations", []) or research_context.get("web_sources", [])
+        if citations:  # Only mark as started if we got actual research results
+            print(f"✅ Research succeeded with {len(citations)} citations - marking as started")
+            try:
+                setattr(lifespan_ctx, 'research_started', True)
+                # Store the successful research results for reuse by subsequent layers
+                setattr(lifespan_ctx, 'cached_research_results', research_context)
+            except Exception:
+                pass
+        else:
+            print(f"⚠️ Research attempt failed/empty - will retry on next layer")
+    elif not is_first_request:
+        # Check if we have cached research results from a previous successful layer
+        if hasattr(lifespan_ctx, 'cached_research_results'):
+            cached_results = getattr(lifespan_ctx, 'cached_research_results')
+            cached_citations = cached_results.get("citations", []) or cached_results.get("web_sources", [])
+            if cached_citations:
+                print(f"📚 Using cached research results from previous layer ({len(cached_citations)} citations)")
+                # Use the cached research results instead of empty results
+                research_context = cached_results.copy()  # Copy to avoid mutation
+                research_context["from_cache"] = True
+                research_context["reused_from_layer"] = True
+            else:
+                print(f"📚 Cached results exist but are empty - using empty results")
+        else:
+            print(f"📚 No cached research results available - using empty results")
     
     max_retries = 2
     safety_feedback = ""
