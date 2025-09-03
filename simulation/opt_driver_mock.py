@@ -57,6 +57,9 @@ class AdamantineDriver(BaseConsumer):
 
         """
         msg_type = msg_obj.get('type', '')
+        print("==========================================")
+        print(msg_obj)
+        print("==========================================")
         if msg_type == 'task':
             subtype = msg_obj.get("subtype", '')
             if subtype == 'agent_task':

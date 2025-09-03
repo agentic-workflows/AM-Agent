@@ -126,7 +126,7 @@ def choose_option(layer: int, control_options: List[Dict], scores: List, planned
     # Start Deep Research (runs independently)
     print(f"📚 Launching deep research analysis...")
     
-    USE_MOCK_RESEARCH = False  # Set to False to use real Perplexity API
+    USE_MOCK_RESEARCH = True  # Set to False to use real Perplexity API
     
     if USE_MOCK_RESEARCH:
         print(f"Using MOCK research service for testing...")
