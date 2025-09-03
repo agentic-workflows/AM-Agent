@@ -80,7 +80,8 @@ class DecisionCrew:
                 best_option = int(data["best_option"])
                 reasoning = data.get("reasoning", "")
             except Exception as exc:
-                best_option = int(min(range(len(scores["scores"])), key=scores["scores"].__getitem__))
+                # scores is expected to be a list; choose lowest score index safely
+                best_option = int(min(range(len(scores)), key=scores.__getitem__))
                 reasoning = f"Fallback due to parse error: {exc}"
 
         return {

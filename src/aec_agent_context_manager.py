@@ -45,11 +45,27 @@ class AdamantineAeCContextManager(BaseAgentContextManager):
                 if len(tool_result):
                     if tool_name == 'choose_option':
                         this_history = dict()
-                        tool_result = tool_result[0]
-                        this_history["scores"] = tool_args["scores"]
-                        tool_result = json.loads(tool_result)
-                        this_history["chosen_option"] = tool_result["option"]
-                        this_history["explanation"] = tool_result["explanation"]
+                        # Support both list and non-list return formats
+                        raw_result = tool_result[0] if isinstance(tool_result, list) else tool_result
+                        this_history["scores"] = tool_args.get("scores", [])
+                        # Parse result robustly: dict → use as-is; JSON-like str → json.loads; otherwise fallback
+                        if isinstance(raw_result, dict):
+                            parsed = raw_result
+                        elif isinstance(raw_result, str):
+                            raw_trim = raw_result.strip()
+                            try:
+                                if raw_trim and raw_trim[0] in "{[":
+                                    parsed = json.loads(raw_trim)
+                                else:
+                                    parsed = {"option": None, "explanation": raw_trim}
+                            except Exception:
+                                self.logger.warning(f"Unexpected tool result string; cannot parse JSON: {raw_trim!r}")
+                                parsed = {"option": None, "explanation": ""}
+                        else:
+                            self.logger.warning(f"Unexpected tool result type: {type(raw_result)}")
+                            parsed = {"option": None, "explanation": ""}
+                        this_history["chosen_option"] = parsed.get("option")
+                        this_history["explanation"] = parsed.get("explanation", "")
                         self.context.history.append(this_history)
                 else:
                     self.logger.error(f"Something wrong happened when running tool {tool_name}.")

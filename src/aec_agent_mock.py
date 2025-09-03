@@ -3,7 +3,7 @@ import os
 import sys
 from threading import Thread
 from time import sleep
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 from flowcept.agents.agent_client import run_tool
 from flowcept.instrumentation.flowcept_agent_task import FlowceptLLM, agent_flowcept_task, get_current_context_task
@@ -102,7 +102,10 @@ def generate_options_set(layer: int, planned_controls, number_of_options=4, camp
 
 @mcp.tool()
 @agent_flowcept_task  # Must be in this order. @mcp.tool then @flowcept_task
-def choose_option(layer: int, control_options: List[Dict], scores: List, planned_controls: List[Dict], user_message: str = "", campaign_id: str=None):
+def choose_option(layer: int, control_options: Optional[List[Dict]] = None, scores: List = (), planned_controls: Optional[List[Dict]] = None, user_message: str = "", campaign_id: str=None):
+    # Tolerate None inputs from the driver
+    control_options = control_options or []
+    planned_controls = planned_controls or []
     llm = build_llm()
     ctx = mcp.get_context()
     history = ctx.request_context.lifespan_context.history

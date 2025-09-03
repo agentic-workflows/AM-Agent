@@ -51,7 +51,8 @@ class CitationClassificationCrew:
 
         # Extract chosen option details
         best_option_index = decision_result.get("best_option", 0)
-        if best_option_index < len(control_options):
+        num_options = len(control_options) if control_options else 0
+        if num_options and best_option_index < num_options:
             chosen_option = control_options[best_option_index]
             chosen_power = chosen_option.get("power", 0)
             chosen_dwell_0 = chosen_option.get("dwell_0", 0)
