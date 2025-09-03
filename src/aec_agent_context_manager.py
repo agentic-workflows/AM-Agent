@@ -15,9 +15,11 @@ class AeCContext:
     ----------
     tasks : list of dict
         A list of task messages received from the message queue. Each task message is stored as a dictionary.
+    user_messages : dict of int -> str
+        A dictionary mapping layer numbers to user messages. Empty string means no user message for that layer.
     """
-
     history: List[Dict]
+    user_messages: Dict[int, str]
 
 
 class AdamantineAeCContextManager(BaseAgentContextManager):
@@ -28,6 +30,10 @@ class AdamantineAeCContextManager(BaseAgentContextManager):
     def message_handler(self, msg_obj: Dict) -> bool:
         if msg_obj.get('type', '') == 'task':
             subtype = msg_obj.get("subtype", '')
+            activity_id = msg_obj.get("activity_id", '')
+            
+            # Handle data_message subtype to capture user_messages
+            # TODO:
             if subtype == 'call_agent_task':
                 print(msg_obj)
                 tool_name = msg_obj["custom_metadata"]["tool_name"]
@@ -39,28 +45,51 @@ class AdamantineAeCContextManager(BaseAgentContextManager):
                 if len(tool_result):
                     if tool_name == 'choose_option':
                         this_history = dict()
-                        tool_result = tool_result[0]
-                        this_history["scores"] = tool_args["scores"]
-                        tool_result = json.loads(tool_result)
-                        this_history["chosen_option"] = tool_result["option"]
-                        this_history["explanation"] = tool_result["explanation"]
+                        # Support both list and non-list return formats
+                        raw_result = tool_result[0] if isinstance(tool_result, list) else tool_result
+                        this_history["scores"] = tool_args.get("scores", [])
+                        # Parse result robustly: dict → use as-is; JSON-like str → json.loads; otherwise fallback
+                        if isinstance(raw_result, dict):
+                            parsed = raw_result
+                        elif isinstance(raw_result, str):
+                            raw_trim = raw_result.strip()
+                            try:
+                                if raw_trim and raw_trim[0] in "{[":
+                                    parsed = json.loads(raw_trim)
+                                else:
+                                    parsed = {"option": None, "explanation": raw_trim}
+                            except Exception:
+                                self.logger.warning(f"Unexpected tool result string; cannot parse JSON: {raw_trim!r}")
+                                parsed = {"option": None, "explanation": ""}
+                        else:
+                            self.logger.warning(f"Unexpected tool result type: {type(raw_result)}")
+                            parsed = {"option": None, "explanation": ""}
+                        this_history["chosen_option"] = parsed.get("option")
+                        this_history["explanation"] = parsed.get("explanation", "")
                         self.context.history.append(this_history)
                 else:
                     self.logger.error(f"Something wrong happened when running tool {tool_name}.")
             elif subtype == 'agent_task':
+                if activity_id == "publish_experiment_setup":
+                    # Handle setup message from HMI mock
+                    print("Start the setup")
+                    used_data = msg_obj.get("used", {})
+                    if "user_messages" in used_data:
+                        print("Received user messages from HMI mock")
+                        self.context.user_messages.update(used_data["user_messages"])
+                        print(f"Stored user messages for {len(self.context.user_messages)} layers")
+                elif activity_id == "hmi_message":
+                    used_data = msg_obj.get("used", {})
+                    if "user_messages" in used_data:
+                        print("Received user messages from HMI mock")
+                        self.context.user_messages.update(used_data["user_messages"])
+                        print(f"Stored user messages for {len(self.context.user_messages)} layers")
                 print('Tool result', msg_obj["activity_id"])
             if msg_obj.get("subtype", '') == "llm_query":
                 print("Msg from agent.")
-                #
-                # msg_output = msg_obj.get("generated", {})["response"]
-                #
-                # simulation_output = simulate_layer(self._layers_count, msg_output)
-                #
-                # run_tool_async("ask_agent", simulation_output)
-
         else:
             print(f"We got a msg with different type: {msg_obj.get("type", None)}")
         return True
 
     def reset_context(self):
-        self.context = AeCContext(history=[])
+        self.context = AeCContext(history=[], user_messages={})
