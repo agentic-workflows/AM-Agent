@@ -45,9 +45,11 @@ class AdamantineAeCContextManager(BaseAgentContextManager):
                 if len(tool_result):
                     if tool_name == 'choose_option':
                         this_history = dict()
+                        this_history["layer"] = tool_args.get("layer")
                         # Support both list and non-list return formats
                         raw_result = tool_result[0] if isinstance(tool_result, list) else tool_result
                         this_history["scores"] = tool_args.get("scores", [])
+                        this_history["control_options"] = tool_args.get("control_options", [])
                         # Parse result robustly: dict → use as-is; JSON-like str → json.loads; otherwise fallback
                         if isinstance(raw_result, dict):
                             parsed = raw_result

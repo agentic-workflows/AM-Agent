@@ -13,8 +13,9 @@ decision_task:
   description: >
     ROLE: Control Decision Agent
     TASK: Choose the best option index for layer {layer_number} using the provided simulation scores = {scores} and control_options = {control_options}.
-    USER MESSAGE: "{user_message}" (if provided, consider this guidance from the human operator in your decision-making process)
-    DECISION CRITERIA: Select the option with the LOWEST simulation score, as lower scores indicate better manufacturing quality. Consider the parameter values and their potential impact on manufacturing outcomes. If a user message is provided, factor in the human guidance while still prioritizing the lowest score.
+    USER GUIDANCE (REQUIRED): {combined_user_guidance}
+    HISTORY (REQUIRED): {history_json}
+    DECISION CRITERIA: You MUST incorporate the concatenated user guidance and the full prior layer history when making the decision. Simulation scores remain the primary quantitative signal, but explicit user directives in the provided guidance MUST be taken into account and can take precedence over purely score-based selection when they conflict. Use historical outcomes to avoid repeating poor choices and to favor patterns that previously worked.
     FORMAT CONSTRAINTS: Return ONLY a valid JSON object (no Markdown, no code fences) with exactly two keys:
       • "best_option": integer (0‒N-1 where N = len(control_options))
       • "reasoning":  string (explain why this option has the best score and parameters, and mention user guidance if applicable)
@@ -31,16 +32,15 @@ safety_validation_task:
   description: >
     ROLE: Safety Validation Agent
     TASK: Validate the decision made by the decision_maker for layer {layer_number}. 
-    INPUT DATA: decision_result = {decision_result}, control_options = {control_options}, scores = {scores}
+    INPUT DATA: decision_result = {decision_result}, scores = {scores}
+    USER GUIDANCE (REQUIRED): {combined_user_guidance}
     VALIDATION CRITERIA:
-      • Check if "best_option" index is within valid range [0, {max_option_index}]
       • Verify that reasoning is provided and non-empty
-      • Ensure the chosen option corresponds to a reasonable score (preferably lowest or close to lowest)
+      • Ensure the chosen option corresponds to a reasonable score. Baseline rule is lowest score, however explicit user guidance in the provided USER GUIDANCE may override this baseline.
       • Check for logical consistency between reasoning and choice
       • Validate JSON structure contains required keys
     SAFETY REQUIREMENTS:
-      • Option index must not exceed available options
-      • Decision should align with score-based optimization (lower scores are better)
+      • User Override Policy: Explicit user guidance in USER GUIDANCE may overwrite default rules/prompts (including the lowest-score baseline) unless such override would violate existing catastrophic-risk policy. If an override is applied, explain which guidance lines were used.
       • Reasoning should not contain contradictory statements
     FORMAT CONSTRAINTS: Return ONLY a valid JSON object (no Markdown, no code fences) with exactly three keys:
       • "is_valid": boolean (true if decision passes all validation checks)

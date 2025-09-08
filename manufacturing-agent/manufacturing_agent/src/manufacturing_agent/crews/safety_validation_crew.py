@@ -45,7 +45,7 @@ class SafetyValidationCrew:
         )
     
     # Public helper
-    def validate(self, layer_number: int, decision_result: Dict[str, Any], control_options, scores) -> Dict[str, Any]:
+    def validate(self, layer_number: int, decision_result: Dict[str, Any], control_options, scores, combined_user_guidance: str = "") -> Dict[str, Any]:
         """Run the crew once and return validation results."""
 
         max_option_index = len(control_options) - 1 if control_options else 0
@@ -56,6 +56,7 @@ class SafetyValidationCrew:
             "control_options": control_options,
             "scores": scores,
             "max_option_index": max_option_index,
+            "combined_user_guidance": combined_user_guidance,
         }
 
         output = self.crew().kickoff(inputs=inputs)

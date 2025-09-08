@@ -45,7 +45,7 @@ class DecisionCrew:
         )
     
     # Public helper - independent decision making
-    def decide(self, layer_number: int, control_options, planned_controls, scores, user_message: str = "") -> Dict[str, Any]:
+    def decide(self, layer_number: int, control_options, planned_controls, scores, user_message: str = "", combined_user_guidance: str = "", history_json=None) -> Dict[str, Any]:
         """Run the crew independently and return the chosen option index & reasoning."""
 
         inputs = {
@@ -54,6 +54,8 @@ class DecisionCrew:
             "planned_controls": planned_controls,
             "scores": scores,
             "user_message": user_message,
+            "combined_user_guidance": combined_user_guidance,
+            "history_json": history_json or [],
         }
 
         output = self.crew().kickoff(inputs=inputs)
@@ -65,12 +67,10 @@ class DecisionCrew:
             data = _json.loads(raw_text)
             best_option = int(data["best_option"])
             reasoning = data.get("reasoning", "")
-            # Post-validation: ensure the index is within the valid range 
-            # Potentially need to rerun?
+            # Post-validation: ensure the index is within the valid range
             n_opts = len(scores)
             if n_opts and (best_option < 0 or best_option >= n_opts):
-                best_option = int(min(range(n_opts), key=scores.__getitem__))
-                reasoning += " (adjusted to valid lowest-score option)"
+                raise ValueError("Best option index out of range")
         except Exception:
             # Import locally to avoid circular imports
             from ..utils.json_fixer_crew import JsonFixerCrew
@@ -80,9 +80,7 @@ class DecisionCrew:
                 best_option = int(data["best_option"])
                 reasoning = data.get("reasoning", "")
             except Exception as exc:
-                # scores is expected to be a list; choose lowest score index safely
-                best_option = int(min(range(len(scores)), key=scores.__getitem__))
-                reasoning = f"Fallback due to parse error: {exc}"
+                raise ValueError(f"Decision parsing failed: {exc}")
 
         return {
             "best_option": best_option,
@@ -90,7 +88,7 @@ class DecisionCrew:
             "raw_text": raw_text,
         }
 
-    def decide_with_feedback(self, layer_number: int, control_options, planned_controls, scores, validation_feedback: str = None, user_message: str = "") -> Dict[str, Any]:
+    def decide_with_feedback(self, layer_number: int, control_options, planned_controls, scores, validation_feedback: str = None, user_message: str = "", combined_user_guidance: str = "", history_json=None) -> Dict[str, Any]:
         """Run the crew with additional feedback from safety validation."""
         
         # Create a modified task description that includes the validation feedback
@@ -100,6 +98,8 @@ class DecisionCrew:
             "planned_controls": planned_controls,
             "scores": scores,
             "user_message": user_message,
+            "combined_user_guidance": combined_user_guidance,
+            "history_json": history_json or [],
         }
         
         if validation_feedback:
@@ -111,6 +111,10 @@ class DecisionCrew:
             PREVIOUS VALIDATION FEEDBACK: {validation_feedback}
             IMPORTANT: The previous decision was rejected for the above reasons. Please carefully review the scores and ensure you select the option with the LOWEST score value.
             
+            USER GUIDANCE (REQUIRED): {combined_user_guidance}
+            HISTORY (REQUIRED): {history_json}
+            DECISION CRITERIA: You MUST incorporate the concatenated user guidance and the full prior layer history when making the decision. Simulation scores remain the primary quantitative signal, but explicit user directives in the provided guidance MUST be taken into account and can take precedence over purely score-based selection when they conflict. Use historical outcomes to avoid repeating poor choices and to favor patterns that previously worked.
+
             FORMAT CONSTRAINTS: Return ONLY a valid JSON object (no Markdown, no code fences) with exactly two keys:
               • "best_option": integer (0‒N-1 where N = len(control_options))
               • "reasoning":  string
@@ -151,8 +155,7 @@ class DecisionCrew:
             # Post-validation: ensure the index is within the valid range 
             n_opts = len(scores)
             if n_opts and (best_option < 0 or best_option >= n_opts):
-                best_option = int(min(range(n_opts), key=scores.__getitem__))
-                reasoning += " (adjusted to valid lowest-score option)"
+                raise ValueError("Best option index out of range")
         except Exception:
             # Import locally to avoid circular imports
             from ..utils.json_fixer_crew import JsonFixerCrew
@@ -162,8 +165,7 @@ class DecisionCrew:
                 best_option = int(data["best_option"])
                 reasoning = data.get("reasoning", "")
             except Exception as exc:
-                best_option = int(min(range(len(scores)), key=scores.__getitem__))
-                reasoning = f"Fallback due to parse error: {exc}"
+                raise ValueError(f"Decision parsing failed: {exc}")
 
         return {
             "best_option": best_option,
