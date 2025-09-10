@@ -16,11 +16,11 @@ class AeCContext:
     ----------
     tasks : list of dict
         A list of task messages received from the message queue. Each task message is stored as a dictionary.
-    user_messages : dict of int -> str
-        A dictionary mapping layer numbers to user messages. Empty string means no user message for that layer.
+    user_messages : list of str
+        An append-only list of user messages received from HMI (order matters).
     """
     history: List[Dict]
-    user_messages: Dict[int, str]
+    user_messages: List[str]
 
 
 class AdamantineAeCContextManager(BaseAgentContextManager):
@@ -78,14 +78,13 @@ class AdamantineAeCContextManager(BaseAgentContextManager):
                     content = used_data.get("content", None)
                     if content is not None:
                         print("Received user messages from HMI mock")
-                        normalized: Dict[int, str] = {}
+                        normalized_list: List[str] = []
                         try:
                             if isinstance(content, dict):
-                                for k, v in content.items():
-                                    try:
-                                        normalized[int(k)] = v
-                                    except Exception:
-                                        self.logger.warning(f"Skipping non-integer layer key: {k!r}")
+                                # Accept dicts of layer->message by discarding keys and preserving values order
+                                for _, v in content.items():
+                                    if isinstance(v, str) and v.strip():
+                                        normalized_list.append(v)
                             elif isinstance(content, str):
                                 trimmed = content.strip()
                                 parsed = None
@@ -95,26 +94,21 @@ class AdamantineAeCContextManager(BaseAgentContextManager):
                                     except Exception:
                                         parsed = None
                                 if isinstance(parsed, dict):
-                                    for k, v in parsed.items():
-                                        try:
-                                            normalized[int(k)] = v
-                                        except Exception:
-                                            self.logger.warning(f"Skipping non-integer layer key: {k!r}")
+                                    for _, v in parsed.items():
+                                        if isinstance(v, str) and v.strip():
+                                            normalized_list.append(v)
                                 else:
-                                    match = re.search(r'layer\s+(\d+)', content, re.IGNORECASE)
-                                    if match:
-                                        layer_index = int(match.group(1))
-                                        normalized[layer_index] = content
-                                    else:
-                                        self.logger.warning("HMI content is a plain string without a layer number; ignoring")
+                                    if trimmed:
+                                        normalized_list.append(trimmed)
                             else:
                                 self.logger.warning(f"Unexpected HMI content type: {type(content)}")
                         except Exception as e:
                             self.logger.error(f"Failed to normalize HMI content: {e}")
-                            normalized = {}
-                        if normalized:
-                            self.context.user_messages.update(normalized)
-                            print(f"Stored user messages for {len(self.context.user_messages)} layers")
+                            normalized_list = []
+                        if normalized_list:
+                            # Append without overwriting
+                            self.context.user_messages.extend(normalized_list)
+                            print(f"Stored total of {len(self.context.user_messages)} user messages")
                 print('Tool result', msg_obj["activity_id"])
             if msg_obj.get("subtype", '') == "llm_query":
                 print("Msg from agent.")
@@ -123,4 +117,4 @@ class AdamantineAeCContextManager(BaseAgentContextManager):
         return True
 
     def reset_context(self):
-        self.context = AeCContext(history=[], user_messages={})
+        self.context = AeCContext(history=[], user_messages=[])

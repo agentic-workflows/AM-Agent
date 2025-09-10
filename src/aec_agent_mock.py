@@ -110,13 +110,15 @@ def choose_option(layer: int, control_options: Optional[List[Dict]] = None, scor
     ctx = mcp.get_context()
     history = ctx.request_context.lifespan_context.history
     
-    # Get user message from context if not provided directly
-    if not user_message and hasattr(ctx.request_context.lifespan_context, 'user_messages'):
-        user_message = ctx.request_context.lifespan_context.user_messages.get(layer, "")
-    
-    # Store user message in context for this layer
+    # Get all user messages so far (append-only list)
+    user_messages_list: List[str] = []
     if hasattr(ctx.request_context.lifespan_context, 'user_messages'):
-        ctx.request_context.lifespan_context.user_messages[layer] = user_message
+        try:
+            existing = ctx.request_context.lifespan_context.user_messages
+            if isinstance(existing, list):
+                user_messages_list = existing
+        except Exception:
+            pass
     
     decision_crew = DecisionCrew(llm=llm)
     citation_crew = CitationClassificationCrew(llm=llm)
@@ -196,12 +198,13 @@ def choose_option(layer: int, control_options: Optional[List[Dict]] = None, scor
     final_citation_analysis = None
     
     # Build combined user guidance (strict concatenation up to current layer)
-    def _combine_user_messages(user_msgs: Dict[int, str], up_to_layer: int) -> str:
+    def _combine_user_messages_list(user_msgs_list: List[str]) -> str:
         lines = []
-        for i in sorted([k for k in user_msgs.keys() if k <= up_to_layer]):
-            msg = (user_msgs.get(i) or "").strip()
-            if msg:
-                lines.append(msg)
+        for msg in user_msgs_list:
+            if isinstance(msg, str):
+                trimmed = msg.strip()
+                if trimmed:
+                    lines.append(trimmed)
         return "\n".join(lines)
 
     def _build_history_json(hist: List[Dict], up_to_layer: int):
@@ -221,8 +224,7 @@ def choose_option(layer: int, control_options: Optional[List[Dict]] = None, scor
                 continue
         return result
 
-    user_msgs = getattr(ctx.request_context.lifespan_context, 'user_messages', {}) or {}
-    combined_user_guidance = _combine_user_messages(user_msgs, layer)
+    combined_user_guidance = _combine_user_messages_list(user_messages_list)
     history_json = _build_history_json(history or [], layer)
 
     for attempt in range(max_retries + 1):
