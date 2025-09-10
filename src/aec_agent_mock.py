@@ -225,6 +225,8 @@ def choose_option(layer: int, control_options: Optional[List[Dict]] = None, scor
         return result
 
     combined_user_guidance = _combine_user_messages_list(user_messages_list)
+    if not (user_message or "").strip():
+        user_message = combined_user_guidance
     history_json = _build_history_json(history or [], layer)
 
     for attempt in range(max_retries + 1):
@@ -324,7 +326,6 @@ def choose_option(layer: int, control_options: Optional[List[Dict]] = None, scor
         "attempts_made": attempt + 1,
         "research_summary": research_context["research_findings"][:300] + "..." if len(research_context["research_findings"]) > 300 else research_context["research_findings"],
         "research_citations": len(research_context["citations"]),
-        "research_parameters": research_context["parameter_context"],
         # Literature attitude analysis
         "literature_attitude": literature_attitude,
         "literature_distribution": final_citation_analysis["distribution"] if final_citation_analysis else {"positive": 0, "neutral": 0, "negative": 0},
@@ -339,7 +340,10 @@ def choose_option(layer: int, control_options: Optional[List[Dict]] = None, scor
         "research_support_confidence": final_citation_analysis.get("confidence", 0.0) if final_citation_analysis else 0.0,
         "literature_attention_flag": literature_attention_flag,
         "user_message": user_message,
-        "user_message_provided": bool(user_message.strip())
+        "user_message_provided": bool(user_message.strip()),
+        # Also return full context for visibility/debugging
+        "combined_user_guidance": combined_user_guidance,
+        "all_user_messages": user_messages_list
     }
 
 @mcp.tool()
