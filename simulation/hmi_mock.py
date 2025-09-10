@@ -29,6 +29,7 @@ def generate_mock_user_messages(max_layers):
     """Generate mock user messages for testing. Empty string means no user message for that layer."""
     sample_messages = [
         "",  # Empty message
+        "if multiple options have close to the best score, choose the one with shortest dwell",
         "Please prioritize quality over speed for this layer",
         "This is a critical layer, ensure maximum precision",
         "", 
@@ -62,12 +63,24 @@ f = Flowcept(save_workflow=False, start_persistence=False, check_safe_stops=Fals
 FlowceptTask(
     used={
         "number_of_options": config["number_of_options"],
-        "planned_control": planned_control,
-        "user_messages": user_messages,
+        "print_name": "control_dwell_rook",
     },
     activity_id="publish_experiment_setup",
-    subtype="agent_task"
+    subtype="agent_task",
+    agent_id="HMI_agent"
 ).send()
+
+
+for message in user_messages:
+    FlowceptTask(
+        used={
+            "content": message,
+        },
+        activity_id="hmi_message",
+        subtype="agent_task",
+        agent_id="HMI_agent"
+    ).send()
+
 
 print("Msg sent!")
 

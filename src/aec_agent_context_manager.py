@@ -72,19 +72,19 @@ class AdamantineAeCContextManager(BaseAgentContextManager):
                 else:
                     self.logger.error(f"Something wrong happened when running tool {tool_name}.")
             elif subtype == 'agent_task':
-                if activity_id == "publish_experiment_setup":
-                    # Handle setup message from HMI mock
-                    print("Start the setup")
+                # if activity_id == "publish_experiment_setup":
+                #     # Handle setup message from HMI mock
+                #     print("Start the setup")
+                    # used_data = msg_obj.get("used", {})
+                    # if "user_messages" in used_data:
+                    #     print("Received user messages from HMI mock")
+                    #     self.context.user_messages.update(used_data["user_messages"])
+                    #     print(f"Stored user messages for {len(self.context.user_messages)} layers")
+                if activity_id == "hmi_message":
                     used_data = msg_obj.get("used", {})
-                    if "user_messages" in used_data:
+                    if "content" in used_data:
                         print("Received user messages from HMI mock")
-                        self.context.user_messages.update(used_data["user_messages"])
-                        print(f"Stored user messages for {len(self.context.user_messages)} layers")
-                elif activity_id == "hmi_message":
-                    used_data = msg_obj.get("used", {})
-                    if "user_messages" in used_data:
-                        print("Received user messages from HMI mock")
-                        self.context.user_messages.update(used_data["user_messages"])
+                        self.context.user_messages.update(used_data["content"])
                         print(f"Stored user messages for {len(self.context.user_messages)} layers")
                 print('Tool result', msg_obj["activity_id"])
             if msg_obj.get("subtype", '') == "llm_query":
