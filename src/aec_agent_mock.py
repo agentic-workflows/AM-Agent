@@ -196,6 +196,36 @@ def choose_option(layer: int, control_options: Optional[List[Dict]] = None, scor
     last_decision = None
     final_citation_analysis = None
     
+    # Build combined user guidance (strict concatenation up to current layer)
+    def _combine_user_messages(user_msgs: Dict[int, str], up_to_layer: int) -> str:
+        lines = []
+        for i in sorted([k for k in user_msgs.keys() if k <= up_to_layer]):
+            msg = (user_msgs.get(i) or "").strip()
+            if msg:
+                lines.append(msg)
+        return "\n".join(lines)
+
+    def _build_history_json(hist: List[Dict], up_to_layer: int):
+        result = []
+        for item in hist:
+            try:
+                layer_ix = item.get("layer")
+                if layer_ix is not None and layer_ix < up_to_layer:
+                    result.append({
+                        "layer": layer_ix,
+                        "control_options": item.get("control_options", []),
+                        "scores": item.get("scores", []),
+                        "chosen_option": item.get("chosen_option"),
+                        "reasoning": item.get("explanation", ""),
+                    })
+            except Exception:
+                continue
+        return result
+
+    user_msgs = getattr(ctx.request_context.lifespan_context, 'user_messages', {}) or {}
+    combined_user_guidance = _combine_user_messages(user_msgs, layer)
+    history_json = _build_history_json(history or [], layer)
+
     for attempt in range(max_retries + 1):
         # Step 2: Make Independent Decision (no research input)
         if attempt == 0:
@@ -206,7 +236,9 @@ def choose_option(layer: int, control_options: Optional[List[Dict]] = None, scor
                 control_options=control_options,
                 planned_controls=planned_controls,
                 scores=scores,
-                user_message=user_message
+                user_message=user_message,
+                combined_user_guidance=combined_user_guidance,
+                history_json=history_json
             )
         else:
             # Retry with validation feedback
@@ -217,7 +249,9 @@ def choose_option(layer: int, control_options: Optional[List[Dict]] = None, scor
                 planned_controls=planned_controls,
                 scores=scores,
                 validation_feedback=safety_feedback,
-                user_message=user_message
+                user_message=user_message,
+                combined_user_guidance=combined_user_guidance,
+                history_json=history_json
             )
         
         # Step 3: Analyze Literature Attitude (paper-by-paper evaluation)
@@ -233,7 +267,8 @@ def choose_option(layer: int, control_options: Optional[List[Dict]] = None, scor
         validation = safety_crew.validate(layer_number=layer,
                                          decision_result=decision,
                                          control_options=control_options,
-                                         scores=scores)
+                                         scores=scores,
+                                         combined_user_guidance=combined_user_guidance)
         
         safety_feedback = validation["feedback"]
         
@@ -247,25 +282,9 @@ def choose_option(layer: int, control_options: Optional[List[Dict]] = None, scor
         # Store the last attempt
         last_decision = decision
         
-        # If this was the last attempt or regeneration not needed, use mathematical fallback
+        # If this was the last attempt or regeneration not needed, stop without mathematical fallback
         if attempt == max_retries or not validation["requires_regeneration"]:
-            # Mathematical fallback: choose the option with the lowest score
-            correct_option = int(np.argmin(scores))
-            decision = {
-                "best_option": correct_option,
-                "reasoning": f"Safety fallback: Selected option {correct_option} with lowest score {scores[correct_option]} after {attempt + 1} attempts. Previous validation feedback: {safety_feedback}",
-                "raw_text": f'{{"best_option": {correct_option}, "reasoning": "Safety fallback selection"}}'
-            }
-            safety_feedback += f" [Applied mathematical fallback to option {correct_option}]"
-            
-            # Run citation analysis on fallback decision
-            print(f"📊 Evaluating literature attitude against fallback decision...")
-            final_citation_analysis = citation_crew.classify(
-                layer_number=layer,
-                decision_result=decision,
-                research_context=research_context,
-                control_options=control_options
-            )
+            print("Decision could not be validated after retries; returning failure")
             break
 
     # Final validation to ensure our decision is correct
@@ -278,8 +297,8 @@ def choose_option(layer: int, control_options: Optional[List[Dict]] = None, scor
     if not final_validation["is_valid"]:
         safety_feedback += f" [WARNING: Final validation still failed: {final_validation['feedback']}]"
 
-    human_option = int(np.argmin(scores))
-    attention_flag = human_option is not None and decision["best_option"] != human_option
+    human_option = None
+    attention_flag = False
     
     # Determine research support boolean based on literature attitude
     literature_attitude = final_citation_analysis["overall_attitude"] if final_citation_analysis else "NO_DATA"
