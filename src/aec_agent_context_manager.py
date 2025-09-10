@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from typing import Dict, List
 import json
+import re
 
 from flowcept.flowceptor.consumers.agent.base_agent_context_manager import BaseAgentContextManager
 from flowcept.agents.agent_client import run_tool
@@ -74,10 +75,46 @@ class AdamantineAeCContextManager(BaseAgentContextManager):
             elif subtype == 'agent_task':
                 if activity_id == "hmi_message":
                     used_data = msg_obj.get("used", {})
-                    if "content" in used_data:
+                    content = used_data.get("content", None)
+                    if content is not None:
                         print("Received user messages from HMI mock")
-                        self.context.user_messages.update(used_data["content"])
-                        print(f"Stored user messages for {len(self.context.user_messages)} layers")
+                        normalized: Dict[int, str] = {}
+                        try:
+                            if isinstance(content, dict):
+                                for k, v in content.items():
+                                    try:
+                                        normalized[int(k)] = v
+                                    except Exception:
+                                        self.logger.warning(f"Skipping non-integer layer key: {k!r}")
+                            elif isinstance(content, str):
+                                trimmed = content.strip()
+                                parsed = None
+                                if trimmed and trimmed[0] in "{[":
+                                    try:
+                                        parsed = json.loads(trimmed)
+                                    except Exception:
+                                        parsed = None
+                                if isinstance(parsed, dict):
+                                    for k, v in parsed.items():
+                                        try:
+                                            normalized[int(k)] = v
+                                        except Exception:
+                                            self.logger.warning(f"Skipping non-integer layer key: {k!r}")
+                                else:
+                                    match = re.search(r'layer\s+(\d+)', content, re.IGNORECASE)
+                                    if match:
+                                        layer_index = int(match.group(1))
+                                        normalized[layer_index] = content
+                                    else:
+                                        self.logger.warning("HMI content is a plain string without a layer number; ignoring")
+                            else:
+                                self.logger.warning(f"Unexpected HMI content type: {type(content)}")
+                        except Exception as e:
+                            self.logger.error(f"Failed to normalize HMI content: {e}")
+                            normalized = {}
+                        if normalized:
+                            self.context.user_messages.update(normalized)
+                            print(f"Stored user messages for {len(self.context.user_messages)} layers")
                 print('Tool result', msg_obj["activity_id"])
             if msg_obj.get("subtype", '') == "llm_query":
                 print("Msg from agent.")

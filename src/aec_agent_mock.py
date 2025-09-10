@@ -118,7 +118,6 @@ def choose_option(layer: int, control_options: Optional[List[Dict]] = None, scor
     if hasattr(ctx.request_context.lifespan_context, 'user_messages'):
         ctx.request_context.lifespan_context.user_messages[layer] = user_message
     
-    print(f"User message for layer {layer}: '{user_message}'" if user_message else f"📝 No user message for layer {layer}")
     decision_crew = DecisionCrew(llm=llm)
     citation_crew = CitationClassificationCrew(llm=llm)
     safety_crew = SafetyValidationCrew(llm=llm)
