@@ -71,15 +71,14 @@ FlowceptTask(
 ).send()
 
 
-for message in user_messages:
-    FlowceptTask(
-        used={
-            "content": message,
-        },
-        activity_id="hmi_message",
-        subtype="agent_task",
-        agent_id="HMI_agent"
-    ).send()
+FlowceptTask(
+    used={
+        "content": user_messages,
+    },
+    activity_id="hmi_message",
+    subtype="agent_task",
+    agent_id="HMI_agent"
+).send()
 
 
 print("Msg sent!")
