@@ -302,6 +302,14 @@ def choose_option(layer: int, control_options: Optional[List[Dict]] = None, scor
 
     human_option = None
     attention_flag = False
+    # Set attention if the agent did not choose the lowest score option (when scores are provided)
+    try:
+        if scores is not None and len(scores) > 0 and isinstance(decision, dict) and "best_option" in decision:
+            lowest_index = int(np.argmin(scores))
+            attention_flag = int(decision["best_option"]) != lowest_index
+    except Exception:
+        # Be robust to any unexpected score/decision formats
+        pass
     
     # Determine research support boolean based on literature attitude
     literature_attitude = final_citation_analysis["overall_attitude"] if final_citation_analysis else "NO_DATA"
