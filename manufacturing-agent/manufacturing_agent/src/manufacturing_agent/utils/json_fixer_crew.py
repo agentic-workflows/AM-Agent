@@ -48,6 +48,9 @@ class JsonFixerCrew:
         return Task(
             description=prompt_template,
             agent=self.json_fixer(),
+            expected_output=(
+                "A valid JSON object or array with no extra text before or after."
+            ),
         )
 
     @crew
