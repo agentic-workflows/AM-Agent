@@ -88,6 +88,18 @@ def build_llm():
 # TOOLS
 #################################################
 
+@mcp.tool()
+@agent_flowcept_task
+def reset_user_context():
+    print("*" * 80)
+    print(f"HISTORY={len(agent_controller.context.history)}")
+    print(f"USER MESSAGES={len(agent_controller.context.user_messages)}")
+    print(f"Resetting the user context...")
+    agent_controller.reset_context()
+    print(f"HISTORY={len(agent_controller.context.history)}")
+    print(f"USER MESSAGES={len(agent_controller.context.user_messages)}")
+    print("*" * 80)
+    return True
 
 @mcp.tool()
 @agent_flowcept_task  # Must be in this order. @mcp.tool then @flowcept_task

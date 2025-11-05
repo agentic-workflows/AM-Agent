@@ -37,6 +37,12 @@ class AdamantineAeCContextManager(BaseAgentContextManager):
             # TODO:
             if subtype == 'call_agent_task':
                 print(msg_obj)
+
+                # https://github.com/agentic-workflows/documentation/blob/main/README.md#--activity_id-reset_user_context
+                if msg_obj.get('activity_id', '') in ["reset_user_context"]:
+                    run_tool("reset_user_context")
+                    return True
+
                 tool_name = msg_obj["custom_metadata"]["tool_name"]
                 campaign_id = msg_obj.get("campaign_id", None)
                 tool_args = msg_obj.get("used", {})
