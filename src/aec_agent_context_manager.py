@@ -32,17 +32,18 @@ class AdamantineAeCContextManager(BaseAgentContextManager):
         if msg_obj.get('type', '') == 'task':
             subtype = msg_obj.get("subtype", '')
             activity_id = msg_obj.get("activity_id", '')
-            
+
+            if activity_id not in ["call_choose_option", "hmi_message", "reset_user_context"]:
+                return True
+
+            if activity_id in ["reset_user_context"]:
+                run_tool("reset_user_context")
+                return True
+
             # Handle data_message subtype to capture user_messages
             # TODO:
             if subtype == 'call_agent_task':
                 print(msg_obj)
-
-                # https://github.com/agentic-workflows/documentation/blob/main/README.md#--activity_id-reset_user_context
-                if msg_obj.get('activity_id', '') in ["reset_user_context"]:
-                    run_tool("reset_user_context")
-                    return True
-
                 tool_name = msg_obj["custom_metadata"]["tool_name"]
                 campaign_id = msg_obj.get("campaign_id", None)
                 tool_args = msg_obj.get("used", {})
