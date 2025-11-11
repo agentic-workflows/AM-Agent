@@ -36,7 +36,7 @@ class AdamantineAeCContextManager(BaseAgentContextManager):
             if activity_id not in ["call_choose_option", "hmi_message", "reset_user_context"]:
                 return True
 
-            if activity_id in ["reset_user_context"]:
+            if activity_id in ["reset_user_context"] and subtype in ["call_agent_task"]:
                 run_tool("reset_user_context")
                 return True
 
